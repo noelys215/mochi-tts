@@ -9,6 +9,10 @@ export const MESSAGE_TYPES = Object.freeze({
   PRIMARY_CONTENT_REGION_CHANGED: "PRIMARY_CONTENT_REGION_CHANGED",
   TAB_PLAYBACK_STATE_REQUEST: "TAB_PLAYBACK_STATE_REQUEST",
   TAB_PLAYBACK_STATE_CHANGED: "TAB_PLAYBACK_STATE_CHANGED",
+  GENERATION_STATE_REQUEST: "GENERATION_STATE_REQUEST",
+  GENERATION_PREPARE_REQUEST: "GENERATION_PREPARE_REQUEST",
+  GENERATION_AWAIT_CONFIRMATION: "GENERATION_AWAIT_CONFIRMATION",
+  GENERATION_CANCEL: "GENERATION_CANCEL",
   PLAYBACK_SESSION_STOP: "PLAYBACK_SESSION_STOP",
   ARTICLE_READ_REQUEST: "ARTICLE_READ_REQUEST",
   ARTICLE_PREVIEW_ESTIMATE_REQUEST: "ARTICLE_PREVIEW_ESTIMATE_REQUEST",
@@ -124,6 +128,33 @@ export function validatePlaybackCommand(message) {
       ? null : "Playback speed must be between 0.5 and 2.";
   }
   return "Unsupported playback command.";
+}
+
+export function validateGenerationCancelMessage(message) {
+  if (!message || message.type !== MESSAGE_TYPES.GENERATION_CANCEL) return "Invalid cancellation request.";
+  const requestId = message.payload?.requestId;
+  if (requestId !== undefined && (typeof requestId !== "string" ||
+      !/^[A-Za-z0-9_-]{8,128}$/.test(requestId))) return "Invalid cancellation request ID.";
+  if (message.payload?.global !== undefined && typeof message.payload.global !== "boolean") {
+    return "Invalid global cancellation flag.";
+  }
+  return null;
+}
+
+export function validateGenerationTransitionMessage(message, expectedType) {
+  if (!message || message.type !== expectedType || !message.payload || typeof message.payload !== "object") {
+    return "Invalid generation state request.";
+  }
+  if (typeof message.payload.requestId !== "string" ||
+      !/^[A-Za-z0-9_-]{8,128}$/.test(message.payload.requestId)) return "Invalid generation request ID.";
+  if (!new Set(["page"]).has(message.payload.sourceType)) return "Invalid generation source type.";
+  if (message.payload.pageUrl !== undefined) {
+    try {
+      const url = new URL(message.payload.pageUrl);
+      if (!/^https?:$/.test(url.protocol)) return "Invalid page URL.";
+    } catch { return "Invalid page URL."; }
+  }
+  return null;
 }
 
 export function validatePlaybackState(payload) {

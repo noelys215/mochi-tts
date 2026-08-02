@@ -45,3 +45,22 @@ test("clear aborts in-flight generation and empties the queue", async () => {
   assert.equal(aborted, true);
   assert.deepEqual(queue.state(), { currentIndex: -1, entries: [] });
 });
+
+test("late non-cooperative generation cannot autoplay after cancellation", async () => {
+  let release;
+  const played = [];
+  const queue = createQueueManager({
+    generate(entry) {
+      return new Promise((resolve) => { release = () => resolve({ audioUrl: "data:audio/wav;base64,late", usage: { requestId: entry.requestId } }); });
+    },
+    async play(entry) { played.push(entry.requestId); },
+    async stop() {},
+  });
+  const loading = queue.load({ text: "late response passage", maxBytes: 100, requestId: "request_late", source: "selection" });
+  await new Promise((resolve) => setImmediate(resolve));
+  await queue.clear();
+  release();
+  await assert.rejects(loading, /cancel/i);
+  assert.deepEqual(played, []);
+  assert.deepEqual(queue.state(), { currentIndex: -1, entries: [] });
+});

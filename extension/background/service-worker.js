@@ -1,5 +1,6 @@
 import { createQueueManager } from "./queue-manager.js";
 import { createPlaybackSession } from "./playback-session.js";
+import { createGenerationState } from "./generation-state.js";
 import { requestAudio, requestBackendMetadata } from "../shared/backend-client.js";
 import { evaluateBudget, priceForMode } from "../shared/budget.js";
 import { chunkText } from "../shared/chunking.js";
@@ -7,6 +8,8 @@ import { speechText } from "../shared/dsa-normalizer.js";
 import {
   MESSAGE_TYPES,
   validateArticleReadMessage,
+  validateGenerationCancelMessage,
+  validateGenerationTransitionMessage,
   validateInPageReadMessage,
   validatePlaybackCommand,
   validatePlaybackState,
@@ -31,6 +34,8 @@ let usageMutation = Promise.resolve();
 const passageHoverTabs = new Set();
 const tabRegions = new Map();
 const playbackSession = createPlaybackSession();
+const generation = createGenerationState();
+const GENERATION_TIMEOUT_MS = 45_000;
 let latestPlayback = {
   status: "idle", requestId: null, currentTime: 0, duration: 0, playbackRate: 1,
 };
@@ -48,13 +53,17 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   passageHoverTabs.delete(tabId);
   tabRegions.delete(tabId);
   if (playbackSession.owns(tabId)) stopPlaybackSession().catch(() => {});
+  else if (generation.snapshot().ownerTabId === tabId) cancelGeneration(tabId).catch(() => {});
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   const session = playbackSession.snapshot();
-  if (!session || session.ownerTabId !== tabId || !changeInfo.url) return;
-  if (comparablePageUrl(changeInfo.url) !== comparablePageUrl(session.sourceUrl)) {
+  const activeGeneration = generation.snapshot();
+  if (!changeInfo.url) return;
+  if (session?.ownerTabId === tabId && comparablePageUrl(changeInfo.url) !== comparablePageUrl(session.sourceUrl)) {
     stopPlaybackSession().catch(() => {});
+  } else if (activeGeneration.ownerTabId === tabId) {
+    cancelGeneration(tabId).catch(() => {});
   }
 });
 
@@ -152,7 +161,10 @@ async function sendPlayback(type, payload) {
 }
 
 function sharedPlayerState(tabId) {
-  return playbackSession.viewFor(tabId, latestPlayback, queue.state());
+  return {
+    ...playbackSession.viewFor(tabId, latestPlayback, queue.state()),
+    generation: generation.viewFor(tabId),
+  };
 }
 
 async function restorePlaybackState() {
@@ -180,8 +192,10 @@ async function sendTabPlayerState(tabId) {
 
 function broadcastPlayerState(additionalTabIds = []) {
   const session = playbackSession.snapshot();
+  const activeGeneration = generation.snapshot();
   const recipients = new Set([...passageHoverTabs, ...additionalTabIds]);
   if (session) recipients.add(session.ownerTabId);
+  if (activeGeneration.ownerTabId) recipients.add(activeGeneration.ownerTabId);
   for (const tabId of recipients) {
     chrome.tabs.sendMessage(tabId, {
       target: "content",
@@ -210,6 +224,7 @@ const queue = createQueueManager({
       backendUrl: local.settings.backendUrl,
       signal,
     });
+    if (signal.aborted) throw new DOMException("Generation was cancelled.", "AbortError");
     const estimate = {
       estimatedCostMicrousd: local.settings.pricingMode === "custom"
         ? decision.estimatedCostMicrousd
@@ -219,6 +234,7 @@ const queue = createQueueManager({
         : result.usage.pricingMode,
     };
     await recordSuccess(entry, result.usage, estimate);
+    if (signal.aborted) throw new DOMException("Generation was cancelled.", "AbortError");
     return {
       audioUrl: arrayBufferToDataUrl(result.audio, result.contentType),
       usage: { ...result.usage, ...estimate, warning: decision.warning },
@@ -238,9 +254,10 @@ const queue = createQueueManager({
   },
 });
 
-async function readAndPlay(payload, source) {
+async function readAndPlay(payload, source, isActive = () => true) {
   const local = await storageState();
   const backend = await requestBackendMetadata({ backendUrl: local.settings.backendUrl });
+  if (!isActive()) throw new DOMException("Generation was cancelled.", "AbortError");
   return queue.load({
     ...payload,
     source,
@@ -256,6 +273,20 @@ async function activeTabForExtension(sender) {
 }
 
 async function startOwnedPlayback(payload, sourceType, tab) {
+  const existingGeneration = generation.snapshot();
+  const continuingConfirmation = existingGeneration.requestId === payload.requestId &&
+    existingGeneration.ownerTabId === tab.id && existingGeneration.status === "awaiting-confirmation";
+  const accepted = continuingConfirmation ? { ok: true } : generation.begin({
+      requestId: payload.requestId, ownerTabId: tab.id, sourceType,
+      sourceLabel: sourceType === "page" ? "Page" : sourceType === "selection" ? "Selected text" : "Passage",
+    });
+  if (!accepted.ok) {
+    const error = new Error("Audio is still being prepared. Cancel it before starting another passage.");
+    error.code = accepted.code;
+    error.activeRequestId = accepted.activeRequestId;
+    throw error;
+  }
+  generation.transition(payload.requestId, "generating");
   const previous = playbackSession.snapshot();
   playbackSession.begin({
     tabId: tab.id,
@@ -266,18 +297,57 @@ async function startOwnedPlayback(payload, sourceType, tab) {
     regionId: payload.regionId || null,
   });
   broadcastPlayerState(previous ? [previous.ownerTabId] : []);
+  let timeout;
   try {
-    const result = await readAndPlay(payload, sourceType);
+    const timeoutPromise = new Promise((_, reject) => {
+      timeout = setTimeout(async () => {
+        if (!generation.isCurrent(payload.requestId)) return;
+        generation.transition(payload.requestId, "failed", { cancellable: false, errorCode: "GENERATION_TIMEOUT" });
+        await queue.clear();
+        reject(new Error("Audio generation timed out. Try again."));
+      }, GENERATION_TIMEOUT_MS);
+    });
+    const result = await Promise.race([
+      readAndPlay(payload, sourceType, () => generation.isCurrent(payload.requestId)),
+      timeoutPromise,
+    ]);
+    if (!generation.isCurrent(payload.requestId)) {
+      throw new DOMException("Generation was cancelled.", "AbortError");
+    }
+    generation.transition(payload.requestId, "ready", { cancellable: false });
+    generation.clear(payload.requestId);
     broadcastPlayerState(previous ? [previous.ownerTabId] : []);
     return result;
   } catch (error) {
-    if (playbackSession.owns(tab.id)) playbackSession.clear();
+    if (generation.isCurrent(payload.requestId)) {
+      generation.transition(payload.requestId, error.name === "AbortError" ? "cancelled" : "failed", {
+        cancellable: false, errorCode: error.name === "AbortError" ? "GENERATION_CANCELLED" : "GENERATION_FAILED",
+      });
+      generation.clear(payload.requestId);
+      if (playbackSession.snapshot()?.queueId === payload.requestId) playbackSession.clear();
+    }
     broadcastPlayerState(previous ? [previous.ownerTabId] : []);
     throw error;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
+async function cancelGeneration(requesterTabId, { global = false } = {}) {
+  const active = generation.snapshot();
+  if (active.status === "idle") return { cancelled: false };
+  if (!global && active.ownerTabId !== requesterTabId) throw new Error("Generation belongs to another tab.");
+  generation.transition(active.requestId, "cancelled", { cancellable: false, errorCode: null });
+  generation.clear(active.requestId);
+  if (playbackSession.snapshot()?.queueId === active.requestId) playbackSession.clear();
+  await queue.clear();
+  broadcastPlayerState([active.ownerTabId]);
+  return { cancelled: true };
+}
+
 async function stopPlaybackSession() {
+  const active = generation.snapshot();
+  if (active.status !== "idle") generation.clear(active.requestId);
   const previous = playbackSession.clear();
   await queue.clear();
   broadcastPlayerState(previous ? [previous.ownerTabId] : []);
@@ -357,6 +427,55 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message?.type === MESSAGE_TYPES.GENERATION_CANCEL) {
+    const error = validateGenerationCancelMessage(message);
+    if (error) return void sendResponse({ ok: false, error });
+    activeTabForExtension(sender).then((tab) => {
+      const isExtensionPage = sender.url?.startsWith(chrome.runtime.getURL(""));
+      const global = message.payload?.global === true && isExtensionPage;
+      if (!tab && !global) throw new Error("Invalid generation cancellation source.");
+      const active = generation.snapshot();
+      if (message.payload?.requestId && message.payload.requestId !== active.requestId) {
+        throw new Error("That generation request is no longer active.");
+      }
+      return cancelGeneration(tab?.id, { global });
+    }).then((result) => sendResponse({ ok: true, ...result }))
+      .catch((failure) => sendResponse({
+        ok: false, error: failure.message, code: typeof failure.code === "string" ? failure.code :
+          (failure.name === "AbortError" ? "GENERATION_CANCELLED" : "GENERATION_FAILED"),
+        activeRequestId: failure.activeRequestId,
+      }));
+    return true;
+  }
+
+  if ([MESSAGE_TYPES.GENERATION_PREPARE_REQUEST, MESSAGE_TYPES.GENERATION_AWAIT_CONFIRMATION]
+    .includes(message?.type)) {
+    const error = validateGenerationTransitionMessage(message, message.type);
+    if (error) return void sendResponse({ ok: false, error });
+    activeTabForExtension(sender).then((tab) => {
+      if (!tab) throw new Error("No active page is available.");
+      if (message.payload.pageUrl && comparablePageUrl(message.payload.pageUrl) !== comparablePageUrl(tab.url)) {
+        throw new Error("Page URL does not match the active tab.");
+      }
+      if (message.type === MESSAGE_TYPES.GENERATION_PREPARE_REQUEST) {
+        const result = generation.begin({
+          requestId: message.payload.requestId, ownerTabId: tab.id,
+          sourceType: "page", sourceLabel: "Page",
+        });
+        if (!result.ok) {
+          const failure = new Error("Audio is still being prepared. Cancel it before starting another passage.");
+          failure.code = result.code;
+          throw failure;
+        }
+      } else if (!generation.transition(message.payload.requestId, "awaiting-confirmation")) {
+        throw new Error("That page request is no longer active.");
+      }
+      broadcastPlayerState();
+      return { ok: true, state: sharedPlayerState(tab.id) };
+    }).then(sendResponse).catch((failure) => sendResponse({ ok: false, error: failure.message, code: failure.code }));
+    return true;
+  }
+
   const isInPageRead = message?.type === MESSAGE_TYPES.PASSAGE_HOVER_READ ||
     message?.type === MESSAGE_TYPES.PAGE_HOVER_READ;
   if (isInPageRead) {
@@ -376,7 +495,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       text: speechText(message.payload.text, settings.dsaNormalization),
     }, expectedSource, sender.tab))
       .then(({ usage }) => sendResponse({ ok: true, usage }))
-      .catch((failure) => sendResponse({ ok: false, error: failure.message }));
+      .catch((failure) => sendResponse({
+        ok: false, error: failure.message, code: typeof failure.code === "string"
+          ? failure.code : failure.name === "AbortError" ? "GENERATION_CANCELLED" : "GENERATION_FAILED",
+        activeRequestId: failure.activeRequestId,
+      }));
     return true;
   }
 
@@ -436,7 +559,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return startOwnedPlayback({ ...message.payload, pageUrl: tab.url }, source, tab);
     })
       .then(({ usage }) => sendResponse({ ok: true, usage }))
-      .catch((failure) => sendResponse({ ok: false, error: failure.message }));
+      .catch((failure) => sendResponse({
+        ok: false, error: failure.message, code: typeof failure.code === "string"
+          ? failure.code : failure.name === "AbortError" ? "GENERATION_CANCELLED" : "GENERATION_FAILED",
+        activeRequestId: failure.activeRequestId,
+      }));
     return true;
   }
 

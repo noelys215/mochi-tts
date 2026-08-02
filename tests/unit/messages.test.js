@@ -3,11 +3,39 @@ import test from "node:test";
 
 import {
   MESSAGE_TYPES,
+  validateGenerationCancelMessage,
+  validateGenerationTransitionMessage,
   validateInPageReadMessage,
   validatePlaybackCommand,
   validatePlaybackState,
   validateRegionChangedMessage,
 } from "../../extension/shared/messages.js";
+
+test("validates generation cancellation request IDs and global intent", () => {
+  assert.equal(validateGenerationCancelMessage({
+    type: MESSAGE_TYPES.GENERATION_CANCEL, payload: { requestId: "request_123" },
+  }), null);
+  assert.equal(validateGenerationCancelMessage({
+    type: MESSAGE_TYPES.GENERATION_CANCEL, payload: { global: true },
+  }), null);
+  assert.match(validateGenerationCancelMessage({
+    type: MESSAGE_TYPES.GENERATION_CANCEL, payload: { requestId: "bad" },
+  }), /request ID/);
+  assert.match(validateGenerationCancelMessage({
+    type: MESSAGE_TYPES.GENERATION_CANCEL, payload: { global: "yes" },
+  }), /global/);
+});
+
+test("validates page preparation state transitions", () => {
+  const message = {
+    type: MESSAGE_TYPES.GENERATION_PREPARE_REQUEST,
+    payload: { requestId: "request_123", sourceType: "page", pageUrl: "https://example.com/lesson" },
+  };
+  assert.equal(validateGenerationTransitionMessage(message, message.type), null);
+  assert.match(validateGenerationTransitionMessage({
+    ...message, payload: { ...message.payload, sourceType: "selection" },
+  }, message.type), /source/);
+});
 
 function passage(overrides = {}) {
   return {

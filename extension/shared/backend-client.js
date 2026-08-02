@@ -27,7 +27,10 @@ export async function requestAudio({
       body: JSON.stringify({ text, requestId }),
       signal,
     });
-  } catch {
+  } catch (error) {
+    if (signal?.aborted || error?.name === "AbortError") {
+      throw new DOMException("Generation was cancelled.", "AbortError");
+    }
     throw new Error("The local speech server is unavailable.");
   }
 
