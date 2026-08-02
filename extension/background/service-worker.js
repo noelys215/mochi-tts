@@ -359,10 +359,11 @@ async function readAndPlay(payload, source, isActive = () => true) {
 }
 
 async function activeTabForExtension(sender) {
-  if (sender.tab?.id && Number.isInteger(sender.tab.id)) return sender.tab;
-  if (!sender.url?.startsWith(chrome.runtime.getURL(""))) return null;
-  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  return tab?.id ? tab : null;
+  if (sender.url?.startsWith(chrome.runtime.getURL(""))) {
+    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    return tab?.id ? tab : null;
+  }
+  return sender.tab?.id && Number.isInteger(sender.tab.id) ? sender.tab : null;
 }
 
 async function readingTabForExtension(sender, payload) {
@@ -617,8 +618,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         : sender.tab?.id ? sender.tab
           : await activeTabForExtension(sender);
       if (!tab) throw new Error("No active page is available.");
-      const sourceUrl = sender.tab?.id ? sender.url : tab.url;
-      const ownerFrameId = sender.tab?.id && Number.isInteger(sender.frameId) ? sender.frameId : 0;
+      const sourceUrl = isExtensionPage ? tab.url : sender.url;
+      const ownerFrameId = !isExtensionPage && Number.isInteger(sender.frameId) ? sender.frameId : 0;
       if (message.payload.pageUrl && comparablePageUrl(message.payload.pageUrl) !== comparablePageUrl(sourceUrl)) {
         throw new Error("Page URL does not match the active tab.");
       }
@@ -637,7 +638,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         throw new Error("That page request is no longer active.");
       }
       broadcastPlayerState();
-      return { ok: true, state: sharedPlayerState(tab.id, sender.tab?.id ? ownerFrameId : undefined) };
+      return { ok: true, state: sharedPlayerState(tab.id, isExtensionPage ? undefined : ownerFrameId) };
     }).then(sendResponse).catch((failure) => sendResponse({ ok: false, error: failure.message, code: failure.code }));
     return true;
   }
@@ -676,7 +677,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     Promise.all([restorePlaybackState(), activeTabForExtension(sender)])
       .then(([, tab]) => sendResponse({
         ok: true,
-        state: sharedPlayerState(tab?.id, sender.tab?.id ? sender.frameId : undefined),
+        state: sharedPlayerState(tab?.id, isExtensionPage ? undefined : sender.frameId),
       }))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
@@ -696,7 +697,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const error = isQueueCommand ? null : validatePlaybackCommand(message);
     if (error) return void sendResponse({ ok: false, error });
     activeTabForExtension(sender).then(async (tab) => {
-      const authorized = sender.tab?.id
+      const authorized = !isExtensionPage && sender.tab?.id
         ? playbackSession.owns(tab?.id, sender.frameId)
         : playbackSession.owns(tab?.id);
       if (!tab || !authorized) throw new Error("Playback belongs to another tab or frame.");
@@ -705,7 +706,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       else if (message.type === MESSAGE_TYPES.QUEUE_PREVIOUS) await queue.previous();
       else await sendPlayback(message.type, message.payload);
       broadcastPlayerState();
-      return { ok: true, state: sharedPlayerState(tab.id, sender.tab?.id ? sender.frameId : undefined) };
+      return { ok: true, state: sharedPlayerState(tab.id, isExtensionPage ? undefined : sender.frameId) };
     }).then(sendResponse)
       .catch((failure) => sendResponse({ ok: false, error: failure.message }));
     return true;
@@ -730,7 +731,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const source = isArticle ? "page" : "selection";
     readingTabForExtension(sender, message.payload).then((tab) => {
       if (!tab) throw new Error("No active page is available for playback.");
-      return startOwnedPlayback({ ...message.payload, pageUrl: tab.url }, source, tab, 0);
+      return startOwnedPlayback({ ...message.payload, pageUrl: tab.url || sender.url }, source, tab, 0);
     })
       .then(({ usage }) => sendResponse({ ok: true, usage }))
       .catch((failure) => sendResponse({
