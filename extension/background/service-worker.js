@@ -305,7 +305,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === MESSAGE_TYPES.PLAYBACK_STATE_CHANGED) {
-    if (!sender.url?.endsWith(OFFSCREEN_PATH) || validatePlaybackState(message.payload)) return false;
+    if (sender.url !== chrome.runtime.getURL(OFFSCREEN_PATH) || validatePlaybackState(message.payload)) return false;
     latestPlayback = message.payload;
     broadcastPlayerState();
     return false;
@@ -494,7 +494,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message?.type === MESSAGE_TYPES.PLAYBACK_ENDED && sender.url?.endsWith(OFFSCREEN_PATH)) {
+  if (message?.type === MESSAGE_TYPES.PLAYBACK_ENDED && sender.url === chrome.runtime.getURL(OFFSCREEN_PATH)) {
     queue.next().catch(() => {});
     return false;
   }
