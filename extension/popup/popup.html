@@ -12,69 +12,52 @@
     <main>
       <header class="brand">
         <img src="../assets/mochi.png" alt="" width="56" height="56" />
-        <div><h1>Mochi Audio</h1><span>Your cozy page reader</span></div>
+        <div>
+          <h1>Mochi Audio</h1>
+          <p id="status" role="status" aria-live="polite" aria-atomic="true">Ready.</p>
+        </div>
       </header>
-      <p>Select text on the page, then read it through your local speech server.</p>
-      <section class="dashboard" aria-label="Reader status">
-        <div><span>Source</span><strong id="source-status">None</strong></div>
-        <div><span>Preview</span><strong id="preview-status">No text loaded</strong></div>
-        <div><span>Queue</span><strong id="queue-status">Empty</strong></div>
-        <div><span>Hover</span><strong id="hover-status">Off</strong></div>
-        <div><span>In-page</span><strong id="in-page-status">Off</strong></div>
-        <div><span>Backend</span><strong id="backend-status">Checking…</strong></div>
-        <div><span>Budget</span><strong id="budget-status">Free mode</strong></div>
+
+      <section aria-labelledby="read-heading">
+        <h2 id="read-heading">Read</h2>
+        <div class="two-column">
+          <button id="read-selection" type="button">Read selection</button>
+          <button id="read-article" type="button">Read page</button>
+        </div>
       </section>
-      <button id="read-selection" type="button">Read selection</button>
-      <button id="read-article" type="button">Read article</button>
-      <button id="hover-toggle" type="button" aria-pressed="false">
-        Enable hover mode
-      </button>
-      <section aria-labelledby="in-page-heading">
-        <h2 id="in-page-heading">In-page controls</h2>
-        <button id="in-page-toggle" type="button" aria-pressed="false">
-          Enable on this tab
-        </button>
-        <p class="fine-print">Adds passage, page-reading, and playback controls to this tab only.</p>
+
+      <section aria-labelledby="page-controls-heading">
+        <h2 id="page-controls-heading">Page controls</h2>
+        <div class="toggle-list">
+          <button id="hover-toggle" type="button" aria-pressed="false">Hover mode: Off</button>
+          <button id="in-page-toggle" type="button" aria-pressed="false">Passage controls: Off</button>
+        </div>
       </section>
+
       <section id="article-preview" aria-labelledby="article-heading" hidden>
-        <h2 id="article-heading">Article preview</h2>
-        <label>Code handling
-          <select id="article-code-mode">
-            <option value="skip">Skip code</option>
-            <option value="comments">Read comments only</option>
-            <option value="literal">Read code literally</option>
-          </select>
-        </label>
-        <label class="checkbox">
-          <input id="normalize-dsa" type="checkbox"> Normalize DSA notation
-        </label>
-        <details>
-          <summary>Original extracted text</summary>
-          <pre id="article-original"></pre>
-        </details>
-        <label>Speech text
-          <textarea id="article-speech" rows="9"></textarea>
+        <h2 id="article-heading">Review page</h2>
+        <label>Extracted text
+          <textarea id="article-speech" rows="8"></textarea>
         </label>
         <p id="article-estimate" class="fine-print">Calculating estimate…</p>
-        <div class="utility-controls">
+        <div class="two-column">
           <button id="confirm-article" type="button">Confirm and read</button>
           <button id="cancel-article" type="button">Cancel</button>
         </div>
       </section>
+
       <section aria-labelledby="playback-heading">
         <h2 id="playback-heading">Playback</h2>
         <div class="transport-controls">
-          <button type="button" data-queue="QUEUE_PREVIOUS">Previous</button>
-          <button type="button" data-queue="QUEUE_NEXT">Next</button>
-          <button type="button" data-playback="PLAYBACK_PLAY">Play</button>
-          <button type="button" data-playback="PLAYBACK_PAUSE">Pause</button>
-          <button type="button" data-playback="PLAYBACK_RESUME">Resume</button>
-          <button type="button" data-playback="PLAYBACK_STOP">Stop</button>
-          <button type="button" data-queue="QUEUE_CLEAR">Clear</button>
-          <button type="button" data-seek="-10">−10s</button>
-          <button type="button" data-seek="10">+10s</button>
-          <label>
-            Speed
+          <button type="button" data-queue="QUEUE_PREVIOUS" aria-label="Previous chunk">Previous</button>
+          <button id="playback-toggle" type="button" aria-label="Play">Play</button>
+          <button type="button" data-queue="QUEUE_NEXT" aria-label="Next chunk">Next</button>
+          <button id="playback-stop" type="button">Stop</button>
+        </div>
+        <input id="playback-progress" type="range" min="0" max="0" value="0" step="0.1" aria-label="Playback position" disabled>
+        <div class="playback-meta">
+          <span id="playback-time">0:00 / 0:00</span>
+          <label>Speed
             <select id="playback-rate">
               <option value="0.75">0.75×</option>
               <option value="1" selected>1×</option>
@@ -85,50 +68,25 @@
           </label>
         </div>
       </section>
+
       <section aria-labelledby="usage-heading">
-        <h2 id="usage-heading">Usage estimates</h2>
-        <dl id="usage-summary">
-          <div><dt>Current</dt><dd id="usage-current">—</dd></div>
-          <div><dt>Today</dt><dd id="usage-today">0 bytes · $0.000000</dd></div>
-          <div><dt>This month</dt><dd id="usage-month">0 bytes · $0.000000</dd></div>
+        <h2 id="usage-heading">Usage</h2>
+        <dl class="usage-summary">
+          <div><dt>Today</dt><dd id="usage-today">0 bytes · $0.00</dd></div>
+          <div><dt>This month</dt><dd id="usage-month">0 bytes · $0.00</dd></div>
+          <div><dt>Plan</dt><dd id="budget-status">Free mode</dd></div>
         </dl>
-        <p class="fine-print">Local estimates only. Not an invoice.</p>
-        <div class="utility-controls">
-          <button id="export-usage" type="button">Export JSON</button>
-          <button id="reset-usage" type="button">Reset usage</button>
-        </div>
-        <h3>Recent history</h3>
-        <ol id="recent-history" class="history-list"><li>No generated requests yet.</li></ol>
       </section>
-      <section aria-labelledby="budget-heading">
-        <h2 id="budget-heading">Spending safeguards</h2>
-        <label>Pricing mode
-          <select id="pricing-mode">
-            <option value="free">Free</option>
-            <option value="paid">Paid server estimate</option>
-            <option value="custom">Custom estimate</option>
-          </select>
-        </label>
-        <label>Custom price / million bytes (USD)
-          <input id="custom-price" type="number" min="0" step="0.000001">
-        </label>
-        <label>Monthly limit (USD)
-          <input id="monthly-limit" type="number" min="0" step="0.01">
-        </label>
-        <label>Warning threshold (%)
-          <input id="warning-threshold" type="number" min="1" max="100">
-        </label>
-        <label class="checkbox"><input id="hard-stop" type="checkbox"> Hard stop at limit</label>
-        <div class="utility-controls">
-          <button id="save-budget" type="button">Save</button>
-          <button id="override-once" type="button">Allow once</button>
-        </div>
+
+      <section id="budget-warning" class="warning" hidden>
+        <p>Monthly spending limit reached.</p>
+        <button id="override-once" type="button">Allow once</button>
       </section>
+
       <nav class="page-links" aria-label="Extension pages">
-        <button id="open-history" type="button">Full history</button>
-        <button id="open-options" type="button">All options</button>
+        <button id="open-options" type="button">Settings</button>
+        <button id="open-history" type="button">History</button>
       </nav>
-      <p id="status" role="status" aria-live="polite" aria-atomic="true">Ready.</p>
     </main>
     <script type="module" src="popup.js"></script>
   </body>

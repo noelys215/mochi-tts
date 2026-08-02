@@ -2,13 +2,16 @@ import { MESSAGE_TYPES } from "../shared/messages.js";
 import { speechText } from "../shared/dsa-normalizer.js";
 
 const readButton = document.querySelector("#read-selection");
+const articleButton = document.querySelector("#read-article");
 const hoverToggle = document.querySelector("#hover-toggle");
 const inPageToggle = document.querySelector("#in-page-toggle");
-const articleButton = document.querySelector("#read-article");
 const articlePreview = document.querySelector("#article-preview");
 const articleSpeech = document.querySelector("#article-speech");
+const playbackToggle = document.querySelector("#playback-toggle");
+const playbackProgress = document.querySelector("#playback-progress");
 const playbackRate = document.querySelector("#playback-rate");
 const status = document.querySelector("#status");
+const budgetWarning = document.querySelector("#budget-warning");
 const HOVER_MINIMUM_LENGTH = 40;
 let hoverEnabled = false;
 let inPageEnabled = false;
@@ -16,34 +19,26 @@ let appSettings;
 let articleOriginalText = "";
 let articleTabId = null;
 let estimateTimer;
+let playbackState = {
+  status: "idle", requestId: null, currentTime: 0, duration: 0, playbackRate: 1,
+};
 
 function formatUsage(value) {
-  return `${value.inputBytes.toLocaleString()} bytes · $${(value.estimatedCostMicrousd / 1_000_000).toFixed(6)}`;
+  return `${value.inputBytes.toLocaleString()} bytes · $${(value.estimatedCostMicrousd / 1_000_000).toFixed(2)}`;
+}
+
+function formatTime(seconds) {
+  const safe = Number.isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 0;
+  return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, "0")}`;
 }
 
 function renderUsage(state) {
-  document.querySelector("#usage-current").textContent = state.aggregates.current
-    ? formatUsage(state.aggregates.current)
-    : "—";
   document.querySelector("#usage-today").textContent = formatUsage(state.aggregates.today);
   document.querySelector("#usage-month").textContent = formatUsage(state.aggregates.month);
   const settings = state.settings;
-  document.querySelector("#pricing-mode").value = settings.pricingMode;
-  document.querySelector("#custom-price").value = settings.customPricePerMillionBytes;
-  document.querySelector("#monthly-limit").value = settings.monthlyLimitMicrousd / 1_000_000;
-  document.querySelector("#warning-threshold").value = settings.warningThresholdPercent;
-  document.querySelector("#hard-stop").checked = settings.hardStop;
   document.querySelector("#budget-status").textContent = settings.monthlyLimitMicrousd
     ? `${settings.pricingMode} · $${(settings.monthlyLimitMicrousd / 1_000_000).toFixed(2)} limit`
-    : `${settings.pricingMode} · no limit`;
-  const history = document.querySelector("#recent-history");
-  history.replaceChildren(...(state.records.length
-    ? state.records.slice(-3).reverse().map((record) => {
-      const item = document.createElement("li");
-      item.textContent = `${record.source} · ${record.inputBytes} bytes · $${(record.estimatedCostMicrousd / 1_000_000).toFixed(6)}`;
-      return item;
-    })
-    : [Object.assign(document.createElement("li"), { textContent: "No generated requests yet." })]));
+    : `${settings.pricingMode[0].toUpperCase()}${settings.pricingMode.slice(1)} mode`;
 }
 
 async function refreshUsage() {
@@ -55,59 +50,53 @@ function setStatus(message, kind = "info") {
   status.textContent = message;
   status.dataset.kind = kind;
   status.setAttribute("role", kind === "error" ? "alert" : "status");
+  budgetWarning.hidden = !/monthly spending limit reached/i.test(message);
 }
 
-function setCurrentText(source, text) {
-  document.querySelector("#source-status").textContent = source;
-  document.querySelector("#preview-status").textContent = text.length > 42
-    ? `${text.slice(0, 39)}…`
-    : text;
+function renderPlayback(next) {
+  if (!next) return;
+  playbackState = next;
+  const duration = Number.isFinite(next.duration) ? next.duration : 0;
+  const currentTime = Math.min(Number.isFinite(next.currentTime) ? next.currentTime : 0, duration || Infinity);
+  const playing = next.status === "playing";
+  const paused = next.status === "paused";
+  playbackToggle.textContent = playing ? "Pause" : paused ? "Resume" : "Play";
+  playbackToggle.setAttribute("aria-label", playbackToggle.textContent);
+  playbackToggle.setAttribute("aria-pressed", String(playing));
+  playbackProgress.max = String(duration);
+  playbackProgress.value = String(currentTime);
+  playbackProgress.disabled = duration <= 0;
+  document.querySelector("#playback-time").textContent = `${formatTime(currentTime)} / ${duration ? formatTime(duration) : "0:00"}`;
+  playbackRate.value = String(next.playbackRate || appSettings?.defaultPlaybackSpeed || 1);
 }
 
-function renderQueue(queue) {
-  const current = queue.currentIndex;
-  document.querySelector("#queue-status").textContent = queue.entries.length
-    ? `${current + 1} of ${queue.entries.length} · ${queue.entries[current]?.status || "pending"}`
-    : "Empty";
+async function refreshPlayback() {
+  const response = await chrome.runtime.sendMessage({ type: MESSAGE_TYPES.PLAYBACK_STATE_REQUEST });
+  if (response?.ok) renderPlayback(response.state);
 }
 
 async function refreshAppState() {
   const response = await chrome.runtime.sendMessage({ type: MESSAGE_TYPES.APP_STATE_REQUEST });
   if (!response?.ok) return;
   appSettings = response.state.settings;
-  renderQueue(response.state.queue);
-  const activeEntry = response.state.queue.entries[response.state.queue.currentIndex];
-  const currentUsage = response.state.aggregates.current;
-  if (activeEntry || currentUsage) {
-    document.querySelector("#source-status").textContent = activeEntry?.source || currentUsage.source;
-    document.querySelector("#preview-status").textContent = activeEntry
-      ? "Current queued passage"
-      : "Text not retained";
+  if (playbackState.status === "idle") playbackRate.value = String(appSettings.defaultPlaybackSpeed);
+  if (status.textContent === "Ready.") {
+    setStatus(response.state.backend.status === "connected"
+      ? `${response.state.backend.mode} backend ready.`
+      : "Backend unavailable.", response.state.backend.status === "connected" ? "info" : "error");
   }
-  document.querySelector("#backend-status").textContent = response.state.backend.status === "connected"
-    ? `${response.state.backend.mode} · connected`
-    : "Unavailable";
-  document.querySelector("#budget-status").textContent = appSettings.monthlyLimitMicrousd
-    ? `${appSettings.pricingMode} · $${(appSettings.monthlyLimitMicrousd / 1_000_000).toFixed(2)} limit`
-    : `${appSettings.pricingMode} · no limit`;
-  playbackRate.value = String(appSettings.defaultPlaybackSpeed);
-  document.querySelector("#article-code-mode").value = appSettings.skipCode ? "skip" : "literal";
-  document.querySelector("#normalize-dsa").checked = appSettings.dsaNormalization;
 }
 
 async function getActiveTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) {
-    throw new Error("This page cannot be read.");
-  }
+  if (!tab?.id) throw new Error("This page cannot be read.");
   return tab;
 }
 
 async function extractSelection(tabId) {
   try {
     const results = await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ["content/selection.js"],
+      target: { tabId }, files: ["content/selection.js"],
     });
     return typeof results[0]?.result === "string" ? results[0].result : "";
   } catch {
@@ -118,8 +107,7 @@ async function extractSelection(tabId) {
 async function extractArticle(tabId, codeMode) {
   try {
     await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ["content/article-extractor.js"],
+      target: { tabId }, files: ["content/article-extractor.js"],
     });
     const results = await chrome.scripting.executeScript({
       target: { tabId },
@@ -128,13 +116,8 @@ async function extractArticle(tabId, codeMode) {
     });
     return results[0]?.result?.text || "";
   } catch {
-    throw new Error("This page does not allow article extraction.");
+    throw new Error("This page does not allow page extraction.");
   }
-}
-
-function formatDuration(seconds) {
-  const minutes = Math.floor(seconds / 60);
-  return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 async function updateArticleEstimate() {
@@ -144,44 +127,30 @@ async function updateArticleEstimate() {
     return;
   }
   const response = await chrome.runtime.sendMessage({
-    type: MESSAGE_TYPES.ARTICLE_PREVIEW_ESTIMATE_REQUEST,
-    payload: { text },
+    type: MESSAGE_TYPES.ARTICLE_PREVIEW_ESTIMATE_REQUEST, payload: { text },
   });
   document.querySelector("#article-estimate").textContent = response?.ok
-    ? `${response.estimate.inputBytes.toLocaleString()} UTF-8 bytes · ${response.estimate.chunks} chunk(s) · $${(response.estimate.estimatedCostMicrousd / 1_000_000).toFixed(6)} · about ${formatDuration(response.estimate.durationSeconds)}`
+    ? `${response.estimate.inputBytes.toLocaleString()} UTF-8 bytes · ${response.estimate.chunks} chunk(s) · $${(response.estimate.estimatedCostMicrousd / 1_000_000).toFixed(6)} · about ${formatTime(response.estimate.durationSeconds)}`
     : response?.error || "Estimate unavailable.";
 }
 
-function renderArticleSpeech() {
-  articleSpeech.value = speechText(
-    articleOriginalText,
-    document.querySelector("#normalize-dsa").checked,
-  );
-  updateArticleEstimate();
-}
-
 async function refreshArticleExtraction() {
-  articleOriginalText = await extractArticle(
-    articleTabId,
-    document.querySelector("#article-code-mode").value,
-  );
-  if (!articleOriginalText) throw new Error("No readable article prose was found.");
-  document.querySelector("#article-original").textContent = articleOriginalText;
-  renderArticleSpeech();
+  articleOriginalText = await extractArticle(articleTabId, appSettings?.skipCode === false ? "literal" : "skip");
+  if (!articleOriginalText) throw new Error("No readable page prose was found.");
+  articleSpeech.value = speechText(articleOriginalText, appSettings?.dsaNormalization === true);
+  await updateArticleEstimate();
 }
 
 function updateHoverControl(enabled) {
   hoverEnabled = enabled;
   hoverToggle.setAttribute("aria-pressed", String(enabled));
-  hoverToggle.textContent = enabled ? "Disable hover mode" : "Enable hover mode";
-  document.querySelector("#hover-status").textContent = enabled ? "On" : "Off";
+  hoverToggle.textContent = `Hover mode: ${enabled ? "On" : "Off"}`;
 }
 
 function updateInPageControl(enabled) {
   inPageEnabled = enabled;
   inPageToggle.setAttribute("aria-pressed", String(enabled));
-  inPageToggle.textContent = enabled ? "Disable on this tab" : "Enable on this tab";
-  document.querySelector("#in-page-status").textContent = enabled ? "On" : "Off";
+  inPageToggle.textContent = `Passage controls: ${enabled ? "On" : "Off"}`;
 }
 
 async function sendTabMessage(tabId, message) {
@@ -191,11 +160,7 @@ async function sendTabMessage(tabId, message) {
 async function injectHoverReader(tabId) {
   await chrome.scripting.executeScript({
     target: { tabId },
-    files: [
-      "content/article-extractor.js",
-      "content/hover-target.js",
-      "content/hover-reader.js",
-    ],
+    files: ["content/article-extractor.js", "content/hover-target.js", "content/hover-reader.js"],
   });
 }
 
@@ -204,10 +169,8 @@ async function injectInPageControls(tabId) {
   await chrome.scripting.executeScript({
     target: { tabId },
     files: [
-      "content/article-extractor.js",
-      "content/in-page-targets.js",
-      "content/in-page-player-state.js",
-      "content/in-page-controls.js",
+      "content/article-extractor.js", "content/in-page-targets.js",
+      "content/in-page-player-state.js", "content/in-page-controls.js",
     ],
   });
 }
@@ -215,45 +178,29 @@ async function injectInPageControls(tabId) {
 async function refreshHoverStatus() {
   try {
     const tab = await getActiveTab();
-    const response = await sendTabMessage(tab.id, {
-      type: MESSAGE_TYPES.HOVER_MODE_STATUS_REQUEST,
-    });
+    const response = await sendTabMessage(tab.id, { type: MESSAGE_TYPES.HOVER_MODE_STATUS_REQUEST });
     updateHoverControl(Boolean(response?.enabled));
-  } catch {
-    updateHoverControl(false);
-  }
+  } catch { updateHoverControl(false); }
 }
 
 async function refreshInPageStatus() {
   try {
     const tab = await getActiveTab();
-    const response = await sendTabMessage(tab.id, {
-      type: MESSAGE_TYPES.IN_PAGE_CONTROLS_STATUS_REQUEST,
-    });
+    const response = await sendTabMessage(tab.id, { type: MESSAGE_TYPES.IN_PAGE_CONTROLS_STATUS_REQUEST });
     updateInPageControl(Boolean(response?.enabled));
-  } catch {
-    updateInPageControl(false);
-  }
+  } catch { updateInPageControl(false); }
 }
 
 async function sendPlayback(type, payload, { silent = false } = {}) {
   try {
-    const response = await chrome.runtime.sendMessage({
-      type,
-      payload,
-    });
-    if (!response?.ok) {
-      throw new Error(response?.error || "Playback is unavailable.");
-    }
-    const playback = response.state;
-    if (playback) {
-      playbackRate.value = String(playback.playbackRate);
-      setStatus(`Playback: ${playback.status}.`);
-    }
+    const response = await chrome.runtime.sendMessage({ type, payload });
+    if (!response?.ok) throw new Error(response?.error || "Playback is unavailable.");
+    if (response.state) renderPlayback(response.state);
+    if (!silent) setStatus(`Playback: ${response.state?.status || "updated"}.`);
+    return response;
   } catch (error) {
-    if (!silent) {
-      setStatus(error.message || "Playback is unavailable.");
-    }
+    if (!silent) setStatus(error.message || "Playback is unavailable.", "error");
+    return null;
   }
 }
 
@@ -263,53 +210,34 @@ readButton.addEventListener("click", async () => {
   try {
     const tab = await getActiveTab();
     const text = await extractSelection(tab.id);
-    if (!text) {
-      throw new Error("Select some text on the page first.");
-    }
-    setCurrentText("Selection", text);
-
-    setStatus("Generating audio…");
+    if (!text) throw new Error("Select some text on the page first.");
+    setStatus("Generating selection audio…");
     const response = await chrome.runtime.sendMessage({
       type: MESSAGE_TYPES.SELECTION_READ_REQUEST,
       payload: { text, requestId: crypto.randomUUID() },
     });
-    if (!response?.ok) {
-      throw new Error(response?.error || "The selection could not be read.");
-    }
-    setStatus(response.usage.warning
-      ? "Playing selection. Monthly usage is above your warning threshold."
-      : "Playing selection.", response.usage.warning ? "warning" : "info");
+    if (!response?.ok) throw new Error(response?.error || "The selection could not be read.");
+    setStatus(response.usage.warning ? "Playing selection · budget warning." : "Playing selection.",
+      response.usage.warning ? "warning" : "info");
     await refreshUsage();
-    await refreshAppState();
   } catch (error) {
     setStatus(error.message || "The selection could not be read.", "error");
-  } finally {
-    readButton.disabled = false;
-  }
+  } finally { readButton.disabled = false; }
 });
 
 articleButton.addEventListener("click", async () => {
   articleButton.disabled = true;
-  setStatus("Extracting article…");
+  setStatus("Extracting page…");
   try {
     articleTabId = (await getActiveTab()).id;
     await refreshArticleExtraction();
-    setCurrentText("Article", articleOriginalText);
     articlePreview.hidden = false;
-    setStatus("Review and edit the preview before confirming.");
+    setStatus("Review the extracted text before reading.");
   } catch (error) {
     articlePreview.hidden = true;
-    setStatus(error.message || "The article could not be extracted.", "error");
-  } finally {
-    articleButton.disabled = false;
-  }
+    setStatus(error.message || "The page could not be extracted.", "error");
+  } finally { articleButton.disabled = false; }
 });
-
-document.querySelector("#article-code-mode").addEventListener("change", async () => {
-  try { await refreshArticleExtraction(); } catch (error) { setStatus(error.message); }
-});
-
-document.querySelector("#normalize-dsa").addEventListener("change", renderArticleSpeech);
 
 articleSpeech.addEventListener("input", () => {
   clearTimeout(estimateTimer);
@@ -319,28 +247,25 @@ articleSpeech.addEventListener("input", () => {
 document.querySelector("#cancel-article").addEventListener("click", () => {
   articlePreview.hidden = true;
   articleOriginalText = "";
-  setStatus("Article preview cancelled.");
+  setStatus("Page preview cancelled.");
 });
 
 document.querySelector("#confirm-article").addEventListener("click", async () => {
   const button = document.querySelector("#confirm-article");
   button.disabled = true;
-  setStatus("Generating article audio…");
+  setStatus("Generating page audio…");
   try {
     const response = await chrome.runtime.sendMessage({
       type: MESSAGE_TYPES.ARTICLE_READ_REQUEST,
       payload: { text: articleSpeech.value, requestId: crypto.randomUUID() },
     });
-    if (!response?.ok) throw new Error(response?.error || "The article could not be read.");
+    if (!response?.ok) throw new Error(response?.error || "The page could not be read.");
     articlePreview.hidden = true;
-    setStatus("Playing article.");
+    setStatus("Playing page.");
     await refreshUsage();
-    await refreshAppState();
   } catch (error) {
-    setStatus(error.message || "The article could not be read.", "error");
-  } finally {
-    button.disabled = false;
-  }
+    setStatus(error.message || "The page could not be read.", "error");
+  } finally { button.disabled = false; }
 });
 
 hoverToggle.addEventListener("click", async () => {
@@ -358,14 +283,12 @@ hoverToggle.addEventListener("click", async () => {
         payload: { minimumLength: appSettings?.minimumHoverLength || HOVER_MINIMUM_LENGTH },
       });
       updateHoverControl(true);
-      setStatus("Hover mode enabled. Press Escape to disable it.");
+      setStatus("Hover mode enabled.");
     }
   } catch {
     updateHoverControl(false);
     setStatus("This page does not allow hover reading.", "error");
-  } finally {
-    hoverToggle.disabled = false;
-  }
+  } finally { hoverToggle.disabled = false; }
 });
 
 inPageToggle.addEventListener("click", async () => {
@@ -378,7 +301,7 @@ inPageToggle.addEventListener("click", async () => {
         target: { tabId: tab.id }, files: ["content/in-page-controls.css"],
       }).catch(() => {});
       updateInPageControl(false);
-      setStatus("In-page controls disabled. Audio continues until stopped.");
+      setStatus("Passage controls disabled. Audio continues until stopped.");
     } else {
       await injectInPageControls(tab.id);
       await sendTabMessage(tab.id, {
@@ -389,90 +312,61 @@ inPageToggle.addEventListener("click", async () => {
         },
       });
       updateInPageControl(true);
-      setStatus("In-page controls enabled on this tab.");
+      setStatus("Passage controls enabled on this tab.");
     }
   } catch {
     updateInPageControl(false);
-    setStatus("This page does not allow in-page controls.", "error");
-  } finally {
-    inPageToggle.disabled = false;
-  }
+    setStatus("This page does not allow passage controls.", "error");
+  } finally { inPageToggle.disabled = false; }
 });
 
-document.querySelectorAll("[data-playback]").forEach((button) => {
-  button.addEventListener("click", () => sendPlayback(button.dataset.playback));
+playbackToggle.addEventListener("click", () => {
+  const type = playbackState.status === "playing"
+    ? MESSAGE_TYPES.PLAYBACK_PAUSE
+    : playbackState.status === "paused"
+      ? MESSAGE_TYPES.PLAYBACK_RESUME
+      : MESSAGE_TYPES.PLAYBACK_PLAY;
+  sendPlayback(type);
 });
+
+document.querySelector("#playback-stop").addEventListener("click", () =>
+  sendPlayback(MESSAGE_TYPES.PLAYBACK_STOP));
 
 document.querySelectorAll("[data-queue]").forEach((button) => {
   button.addEventListener("click", async () => {
     const response = await chrome.runtime.sendMessage({ type: button.dataset.queue });
-    if (response?.state) renderQueue(response.state);
-    setStatus(response?.ok ? "Queue updated." : response?.error || "Queue is unavailable.");
+    setStatus(response?.ok ? "Queue updated." : response?.error || "Queue is unavailable.",
+      response?.ok ? "info" : "error");
   });
 });
+
+playbackProgress.addEventListener("change", () => sendPlayback(MESSAGE_TYPES.PLAYBACK_SEEK, {
+  deltaSeconds: Number(playbackProgress.value) - (playbackState.currentTime || 0),
+}));
+
+playbackRate.addEventListener("change", () => sendPlayback(MESSAGE_TYPES.PLAYBACK_RATE_SET, {
+  rate: Number(playbackRate.value),
+}));
 
 document.querySelector("#open-options").addEventListener("click", () => chrome.runtime.openOptionsPage());
 document.querySelector("#open-history").addEventListener("click", () => {
   chrome.tabs.create({ url: chrome.runtime.getURL("history/history.html") });
 });
 
-document.querySelector("#save-budget").addEventListener("click", async () => {
-  const response = await chrome.runtime.sendMessage({
-    type: MESSAGE_TYPES.USAGE_SETTINGS_UPDATE,
-    payload: {
-      pricingMode: document.querySelector("#pricing-mode").value,
-      customPricePerMillionBytes: Number(document.querySelector("#custom-price").value),
-      monthlyLimitMicrousd: Math.round(Number(document.querySelector("#monthly-limit").value) * 1_000_000),
-      warningThresholdPercent: Number(document.querySelector("#warning-threshold").value),
-      hardStop: document.querySelector("#hard-stop").checked,
-    },
-  });
-  if (response?.ok) renderUsage(response.state);
-  setStatus(response?.ok ? "Spending safeguards saved." : "Could not save safeguards.");
-});
-
 document.querySelector("#override-once").addEventListener("click", async () => {
   const response = await chrome.runtime.sendMessage({ type: MESSAGE_TYPES.BUDGET_OVERRIDE_ONCE });
-  setStatus(response?.ok ? "One generation may exceed the limit." : "Override unavailable.");
+  budgetWarning.hidden = true;
+  setStatus(response?.ok ? "One generation may exceed the limit." : "Override unavailable.",
+    response?.ok ? "info" : "error");
 });
 
-document.querySelector("#export-usage").addEventListener("click", async () => {
-  const response = await chrome.runtime.sendMessage({ type: MESSAGE_TYPES.USAGE_EXPORT_REQUEST });
-  if (!response?.ok) return setStatus("Usage export failed.");
-  const url = URL.createObjectURL(new Blob([JSON.stringify(response.data, null, 2)], { type: "application/json" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "mochi-audio-usage.json";
-  link.click();
-  URL.revokeObjectURL(url);
-  setStatus("Usage exported.");
-});
-
-document.querySelector("#reset-usage").addEventListener("click", async () => {
-  if (!window.confirm("Reset all local usage history?")) return;
-  const response = await chrome.runtime.sendMessage({ type: MESSAGE_TYPES.USAGE_RESET });
-  if (response?.ok) renderUsage(response.state);
-  setStatus(response?.ok ? "Usage reset." : "Usage reset failed.");
-});
-
-document.querySelectorAll("[data-seek]").forEach((button) => {
-  button.addEventListener("click", () =>
-    sendPlayback(MESSAGE_TYPES.PLAYBACK_SEEK, {
-      deltaSeconds: Number(button.dataset.seek),
-    }),
-  );
-});
-
-playbackRate.addEventListener("change", () => {
-  sendPlayback(MESSAGE_TYPES.PLAYBACK_RATE_SET, {
-    rate: Number(playbackRate.value),
-  });
+chrome.runtime.onMessage.addListener((message) => {
+  if (message?.type === MESSAGE_TYPES.PLAYBACK_STATE_CHANGED) renderPlayback(message.payload);
+  return false;
 });
 
 refreshHoverStatus();
 refreshInPageStatus();
-sendPlayback(MESSAGE_TYPES.PLAYBACK_STATE_REQUEST, undefined, { silent: true });
+refreshPlayback().catch(() => {});
 refreshUsage().catch(() => {});
-refreshAppState().catch(() => {
-  document.querySelector("#backend-status").textContent = "Unavailable";
-});
+refreshAppState().catch(() => setStatus("Backend unavailable.", "error"));
