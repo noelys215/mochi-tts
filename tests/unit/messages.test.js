@@ -5,11 +5,38 @@ import {
   MESSAGE_TYPES,
   validateGenerationCancelMessage,
   validateGenerationTransitionMessage,
+  validateFrameLifecycleMessage,
   validateInPageReadMessage,
+  validatePassageHoverControlMessage,
   validatePlaybackCommand,
   validatePlaybackState,
   validateRegionChangedMessage,
 } from "../../extension/shared/messages.js";
+
+test("validates frame lifecycle URLs", () => {
+  assert.equal(validateFrameLifecycleMessage({
+    type: MESSAGE_TYPES.FRAME_LIFECYCLE_ENDED,
+    payload: { pageUrl: "https://leetcode.com/explore/lesson" },
+  }), null);
+  assert.match(validateFrameLifecycleMessage({
+    type: MESSAGE_TYPES.FRAME_LIFECYCLE_ENDED,
+    payload: { pageUrl: "chrome-extension://spoof" },
+  }), /URL/);
+});
+
+test("validates tab-scoped hover orchestration without accepting frame IDs", () => {
+  const message = {
+    type: MESSAGE_TYPES.PASSAGE_HOVER_CONTROLS_ENABLE,
+    payload: { tabId: 7, options: { minimumLength: 40, skipCode: true }, frameId: 99 },
+  };
+  assert.equal(validatePassageHoverControlMessage(message), null);
+  assert.match(validatePassageHoverControlMessage({
+    ...message, payload: { ...message.payload, tabId: -1 },
+  }), /tab/);
+  assert.match(validatePassageHoverControlMessage({
+    ...message, payload: { tabId: 7, options: { minimumLength: 4, skipCode: true } },
+  }), /options/);
+});
 
 test("validates generation cancellation request IDs and global intent", () => {
   assert.equal(validateGenerationCancelMessage({

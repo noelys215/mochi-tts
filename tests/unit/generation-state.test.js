@@ -34,3 +34,14 @@ test("clearing cancellation restores idle state and rejects stale completion", (
   assert.equal(generation.snapshot().status, "idle");
   assert.equal(generation.transition("request_A", "ready"), false);
 });
+
+test("generation ownership is isolated to the initiating frame", () => {
+  const generation = createGenerationState();
+  generation.begin({
+    requestId: "request_frame", ownerTabId: 7, ownerFrameId: 3, sourceType: "hover-passage",
+  });
+  assert.equal(generation.viewFor(7, 3).ownsGeneration, true);
+  assert.equal(generation.viewFor(7, 0).ownsGeneration, false);
+  assert.equal(generation.viewFor(7, 0).otherFrameGenerating, true);
+  assert.equal(generation.viewFor(8, 3).otherTabGenerating, true);
+});

@@ -51,6 +51,17 @@ const leetCodeFixture = `<!doctype html><html lang="en"><head><title>Sliding win
   <aside>Unrelated sidebar controls and commentary.</aside>
 </body></html>`;
 
+const leetCodeFrameShell = `<!doctype html><html lang="en"><head><title>Explore shell</title><style>iframe{display:block;width:min(720px,95vw);height:360px;margin:12px 0}</style></head><body>
+  <nav><a id="shell-nav" href="#lessons">Lesson navigation and account controls</a></nav>
+  <iframe id="lesson-frame" title="Lesson" src="https://leetcode.com/explore/interview/card/frame-lesson"></iframe>
+  <iframe id="sibling-frame" title="Sidebar" src="https://leetcode.com/explore/interview/card/frame-sibling"></iframe>
+</body></html>`;
+
+const siblingFrameFixture = `<!doctype html><html lang="en"><body><section>
+  <p id="sibling-copy">A separate readable companion panel contains enough prose to verify that playback UI never leaks into sibling frames.</p>
+  <p>Additional companion prose makes this a valid independent region without making it the lesson owner.</p>
+</section></body></html>`;
+
 test.beforeAll(async () => {
   generatedTexts = [];
   delayGeneration = false;
@@ -90,6 +101,15 @@ test.beforeAll(async () => {
   await context.route("https://leetcode.com/learn/sliding-window", (route) => route.fulfill({
     status: 200, contentType: "text/html", body: leetCodeFixture,
   }));
+  await context.route("https://leetcode.com/learn/iframe-shell", (route) => route.fulfill({
+    status: 200, contentType: "text/html", body: leetCodeFrameShell,
+  }));
+  await context.route(/https:\/\/leetcode\.com\/explore\/interview\/card\/frame-lesson(?:\?.*)?$/, (route) => route.fulfill({
+    status: 200, contentType: "text/html", body: leetCodeFixture,
+  }));
+  await context.route(/https:\/\/leetcode\.com\/explore\/interview\/card\/frame-sibling(?:\?.*)?$/, (route) => route.fulfill({
+    status: 200, contentType: "text/html", body: siblingFrameFixture,
+  }));
   serviceWorker = context.serviceWorkers()[0] || await context.waitForEvent("serviceworker");
   extensionId = new URL(serviceWorker.url()).host;
 });
@@ -116,6 +136,31 @@ async function leetCodePage() {
   const page = await context.newPage();
   await page.goto("https://leetcode.com/learn/sliding-window");
   return page;
+}
+
+async function iframeLeetCodePage() {
+  const page = await context.newPage();
+  await page.goto("https://leetcode.com/learn/iframe-shell");
+  return page;
+}
+
+async function tabIdFor(page) {
+  await page.bringToFront();
+  return serviceWorker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    return tab.id;
+  });
+}
+
+async function frameInventory(page) {
+  const tabId = await tabIdFor(page);
+  return serviceWorker.evaluate(async (id) => chrome.scripting.executeScript({
+    target: { tabId: id, allFrames: true },
+    func: async () => ({
+      href: location.href,
+      state: (await chrome.runtime.sendMessage({ type: "PLAYBACK_STATE_REQUEST" })).state,
+    }),
+  }), tabId);
 }
 
 async function popupFor(page) {
@@ -429,6 +474,85 @@ test("LeetCode adapter preserves inline code, deduplicates math, and exposes pag
   expect(text).toContain("[1, 2, 3]");
   expect((text.match(/O\(n\)/g) || [])).toHaveLength(1);
   expect(text).not.toMatch(/Report Issue|function example|Lesson navigation/);
+});
+
+test("LeetCode iframe owns hover UI, generation, and player without leaking to shell frames", async () => {
+  delayGeneration = true;
+  const page = await iframeLeetCodePage();
+  const popup = await enable(page);
+  const lesson = page.frameLocator("#lesson-frame");
+  const sibling = page.frameLocator("#sibling-frame");
+
+  await page.locator("#shell-nav").hover();
+  await expect(page.locator(passageButton)).toBeHidden();
+  await lesson.locator("#lesson").hover();
+  await expect(lesson.locator(passageButton)).toBeVisible();
+  await expect(lesson.locator(passageButton)).toHaveCount(1);
+  expect(generatedTexts).toHaveLength(0);
+  await lesson.locator(passageButton).click();
+  await expect.poll(() => generatedTexts.length).toBe(1);
+  expect(generatedTexts[0]).toContain("A paragraph with bold text");
+  expect(generatedTexts[0]).not.toContain("separate readable companion");
+
+  const inventory = await frameInventory(page);
+  const lessonResult = inventory.find((entry) => entry.result.href.includes("frame-lesson"));
+  expect(lessonResult.result.state.session.ownerFrameId).toBe(lessonResult.frameId);
+  await expect(lesson.locator(player)).toHaveCount(1);
+  await expect(page.locator(player)).toHaveCount(0);
+  await expect(sibling.locator(player)).toHaveCount(0);
+  if (process.env.MOCHI_VISUAL_PROOF_DIR) {
+    await page.screenshot({ path: `${process.env.MOCHI_VISUAL_PROOF_DIR}/leetcode-iframe-player.png`, fullPage: true });
+  }
+  const siblingResult = inventory.find((entry) => entry.result.href.includes("frame-sibling"));
+  expect(siblingResult.result.state.session.otherFrameActive).toBe(true);
+  const rejected = await serviceWorker.evaluate(async ({ tabId, frameId, spoofedFrameId }) => {
+    const [result] = await chrome.scripting.executeScript({
+      target: { tabId, frameIds: [frameId] },
+      func: (ownerFrameId) => chrome.runtime.sendMessage({
+        type: "PLAYBACK_PAUSE", payload: { frameId: ownerFrameId },
+      }),
+      args: [spoofedFrameId],
+    });
+    return result.result;
+  }, { tabId: await tabIdFor(page), frameId: siblingResult.frameId, spoofedFrameId: lessonResult.frameId });
+  expect(rejected.ok).toBe(false);
+  expect(rejected.error).toMatch(/frame/);
+  await lesson.locator(`${player} [data-action="cancel-generation"]`).click();
+  await expect.poll(() => abortedGenerations).toBe(1);
+
+  await lesson.locator(".content-title").hover();
+  await expect(lesson.locator(pageButton)).toBeVisible();
+  await lesson.locator(pageButton).click();
+  const preview = lesson.locator(".mochi-audio-confirmation textarea");
+  await expect(preview).toBeVisible();
+  const previewText = await preview.inputValue();
+  expect(previewText).toContain("A paragraph with bold text");
+  expect(previewText).not.toContain("Lesson navigation");
+  expect(previewText).not.toContain("function example");
+  await lesson.locator('.mochi-audio-confirmation [data-action="cancel-page"]').click();
+
+  const siblingFrame = page.frames().find((frame) => frame.url().includes("frame-sibling"));
+  await siblingFrame.goto("https://leetcode.com/explore/interview/card/frame-sibling?reload=1");
+  await expect(sibling.locator("#mochi-audio-in-page-overlay")).toHaveCount(1);
+  await sibling.locator("#sibling-copy").hover();
+  await expect(sibling.locator(passageButton)).toBeVisible();
+
+  await sibling.locator("#sibling-copy").press("Escape");
+  await expect(page.locator("#mochi-audio-in-page-overlay")).toHaveCount(0);
+  await expect(lesson.locator("#mochi-audio-in-page-overlay")).toHaveCount(0);
+  await expect(sibling.locator("#mochi-audio-in-page-overlay")).toHaveCount(0);
+  await expect(popup.locator("#passage-hover-toggle")).toHaveAttribute("aria-pressed", "false");
+
+  await popup.locator("#passage-hover-toggle").click();
+  await lesson.locator("#lesson").hover();
+  await lesson.locator(passageButton).click();
+  await expect.poll(() => generatedTexts.length).toBe(2);
+  await page.locator("#lesson-frame").evaluate((frame) => frame.remove());
+  await expect.poll(() => abortedGenerations).toBe(2);
+  const cleared = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "PLAYBACK_STATE_REQUEST" }));
+  expect(cleared.state.session.ownsPlayback).toBe(false);
+  expect(cleared.state.playback.status).toBe("idle");
+  await popup.close();
 });
 
 test("dynamic lesson replacement re-resolves the primary region without duplicate UI", async () => {

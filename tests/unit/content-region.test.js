@@ -65,6 +65,12 @@ test("LeetCode adapter prefers block markdown only on approved hosts", () => {
   assert.equal(resolved.siteId, "leetcode");
   assert.equal(resolver.resolvePrimaryContentRegion(doc, { hostname: "fakeleetcode.com" }), null);
   assert.equal(resolver.isLeetCodeHostname("leetcode.example.com"), false);
+  assert.equal(resolver.resolvePrimaryContentRegion(doc, { hostname: "leetcode.com" }, {
+    top: {}, self: {},
+  }).isTopFrame, false);
+  const topWindow = {};
+  topWindow.top = topWindow.self = topWindow;
+  assert.equal(resolver.isTopFrame(topWindow), true);
 });
 
 test("generic fallback chooses a validated prose region and excludes navigation shells", () => {

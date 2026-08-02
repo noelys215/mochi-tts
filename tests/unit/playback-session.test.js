@@ -8,12 +8,24 @@ const queue = { currentIndex: 0, entries: [{ id: "chunk" }] };
 
 test("assigns and replaces one authoritative playback owner", () => {
   const session = createPlaybackSession();
-  session.begin({ tabId: 1, windowId: 10, sourceUrl: "https://a.test", sourceType: "hover-passage", queueId: "a" });
+  session.begin({ tabId: 1, frameId: 3, windowId: 10, sourceUrl: "https://a.test", sourceType: "hover-passage", queueId: "a" });
   assert.equal(session.owns(1), true);
+  assert.equal(session.owns(1, 3), true);
+  assert.equal(session.owns(1, 0), false);
   const replaced = session.begin({ tabId: 2, windowId: 10, sourceUrl: "https://b.test", sourceType: "page", queueId: "b" });
   assert.equal(replaced.previous.ownerTabId, 1);
   assert.equal(session.owns(1), false);
   assert.equal(session.owns(2), true);
+});
+
+test("sanitizes playback and queue state for sibling frames", () => {
+  const session = createPlaybackSession();
+  session.begin({ tabId: 7, frameId: 4, windowId: 10, sourceUrl: "https://leetcode.com/frame", sourceType: "page", queueId: "lesson" });
+  assert.equal(session.viewFor(7, playback, queue, 4).session.ownerFrameId, 4);
+  const sibling = session.viewFor(7, playback, queue, 8);
+  assert.equal(sibling.session.otherFrameActive, true);
+  assert.equal(sibling.playback.status, "idle");
+  assert.deepEqual(sibling.queue.entries, []);
 });
 
 test("sanitizes queue and playback state for non-owner tabs", () => {
