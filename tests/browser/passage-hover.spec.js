@@ -19,6 +19,19 @@ let extensionId;
 let generatedTexts;
 let delayGeneration;
 let abortedGenerations;
+let longAudio;
+
+function silentWav(seconds = 12) {
+  const sampleRate = 8_000;
+  const dataBytes = sampleRate * seconds * 2;
+  const output = Buffer.alloc(44 + dataBytes);
+  output.write("RIFF", 0); output.writeUInt32LE(36 + dataBytes, 4); output.write("WAVEfmt ", 8);
+  output.writeUInt32LE(16, 16); output.writeUInt16LE(1, 20); output.writeUInt16LE(1, 22);
+  output.writeUInt32LE(sampleRate, 24); output.writeUInt32LE(sampleRate * 2, 28);
+  output.writeUInt16LE(2, 32); output.writeUInt16LE(16, 34); output.write("data", 36);
+  output.writeUInt32LE(dataBytes, 40);
+  return output;
+}
 
 const leetCodeFixture = `<!doctype html><html lang="en"><head><title>Sliding window</title></head><body>
   <nav>Lesson navigation should never be spoken.</nav>
@@ -57,7 +70,8 @@ test.beforeAll(async () => {
             }, { once: true });
           });
         }
-        return mock.synthesize(request);
+        const result = await mock.synthesize(request);
+        return longAudio ? { ...result, audio: silentWav() } : result;
       },
     },
   });
@@ -86,7 +100,7 @@ test.afterAll(async () => {
   if (server) await once(server, "close");
 });
 
-test.beforeEach(() => { generatedTexts.length = 0; delayGeneration = false; abortedGenerations = 0; });
+test.beforeEach(() => { generatedTexts.length = 0; delayGeneration = false; abortedGenerations = 0; longAudio = false; });
 test.afterEach(async () => {
   await serviceWorker.evaluate(() => chrome.runtime.sendMessage({ type: "PLAYBACK_SESSION_STOP" })).catch(() => {});
   await Promise.all(context.pages().filter((page) => page.url() !== "about:blank").map((page) => page.close()));
@@ -125,6 +139,31 @@ async function commandFromTab(page, type) {
     });
     return result.result;
   }, { id: tabId, command: type });
+}
+
+async function playbackFromTab(page) {
+  await page.bringToFront();
+  const tabId = await serviceWorker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    return tab.id;
+  });
+  return serviceWorker.evaluate(async (id) => {
+    const [result] = await chrome.scripting.executeScript({
+      target: { tabId: id },
+      func: () => chrome.runtime.sendMessage({ type: "PLAYBACK_STATE_REQUEST" }),
+    });
+    return result.result.state;
+  }, tabId);
+}
+
+async function physicalPlayback() {
+  return serviceWorker.evaluate(async () => {
+    const response = await chrome.runtime.sendMessage({
+      target: "offscreen",
+      type: "PLAYBACK_STATE_REQUEST",
+    });
+    return response.state;
+  });
 }
 
 async function renderPlayerState(page, payload) {
@@ -199,7 +238,12 @@ test("unified controls are opt-in and reuse one hover passage button", async () 
   await expect.poll(() => generatedTexts.length).toBe(1);
   expect(generatedTexts[0]).toContain("Healthy reefs reduce wave energy");
   await expect(page.locator(player)).toHaveCount(1);
-  await page.locator(`${player} [data-command="PLAYBACK_STOP"]`).click();
+  const requestId = (await playbackFromTab(page)).playback.requestId;
+  await page.locator(`${player} [data-close]:visible`).click();
+  await expect(page.locator(player)).toHaveCount(0);
+  const hiddenPlayback = await playbackFromTab(page);
+  expect(hiddenPlayback.playback.requestId).toBe(requestId);
+  await renderPlayerState(page, hiddenPlayback);
   await expect(page.locator(player)).toHaveCount(0);
   await popup.close();
 });
@@ -216,10 +260,11 @@ test("generation feedback prevents duplicate clicks and Cancel restores controls
   await expect(button).toBeDisabled();
   await expect(button).toHaveAttribute("aria-label", "Generating passage audio");
   await expect(page.locator(`${player} [data-player-status]`)).toHaveText("Preparing audio…");
-  await expect(page.locator(`${player} [data-controls]`)).toBeHidden();
+  await expect(page.locator(`${player} [data-playback-row]`)).toBeHidden();
   await expect(page.locator(`${player} [data-progress-row]`)).toBeHidden();
+  await expect(page.locator(`${player} [data-loading]`)).toBeVisible();
   await expect(page.locator(`${player} [data-action="cancel-generation"]`)).toBeVisible();
-  await expect(page.locator(player)).not.toContainText(/Chunk|Queue|0:00/);
+  await expect(page.locator(`${player} [data-progress-row]`)).not.toBeVisible();
   await expect(page.locator(pageButton)).toBeDisabled();
 
   await button.evaluate((node) => { node.click(); node.click(); });
@@ -235,7 +280,7 @@ test("generation feedback prevents duplicate clicks and Cancel restores controls
   await popup.close();
 });
 
-test("compact player uses one stateful action and responsive part controls", async () => {
+test("compact player uses two responsive iPod-style rows", async () => {
   const page = await genericPage();
   await page.setViewportSize({ width: 320, height: 568 });
   await enable(page);
@@ -248,21 +293,30 @@ test("compact player uses one stateful action and responsive part controls", asy
     queue: { currentIndex: -1, entries: [{}] },
   });
   await expect(page.locator(`${player} [data-player-status]`)).toHaveText("Preparing audio…");
-  await expect(page.locator(`${player} [data-controls]`)).toBeHidden();
+  await expect(page.locator(`${player} [data-playback-row]`)).toBeHidden();
+  await expect(page.locator(`${player} [data-loading]`)).toBeVisible();
   await expectPlayerContained(page);
+  if (process.env.MOCHI_VISUAL_PROOF_DIR) {
+    await page.screenshot({ path: `${process.env.MOCHI_VISUAL_PROOF_DIR}/player-loading-320.png` });
+  }
 
   await renderPlayerState(page, {
     session, generation,
     playback: { status: "playing", requestId: "request_ui_123", currentTime: 22, duration: 36, playbackRate: 1 },
     queue: { currentIndex: 0, entries: [{}] },
   });
-  await expect(page.locator(`${player} [data-player-status]`)).toHaveText("Playing");
   await expect(page.locator(`${player} [data-primary]`)).toHaveAttribute("aria-label", "Pause audio");
-  await expect(page.locator(`${player} [data-previous]`)).toBeHidden();
-  await expect(page.locator(`${player} [data-next]`)).toBeHidden();
-  await expect(page.locator(`${player} [data-time]`)).toHaveText("0:22 / 0:36");
-  await expect(page.locator(player)).not.toContainText(/Chunk|Queue/);
+  await expect(page.locator(`${player} [data-seek="-5"]`)).toHaveAttribute("aria-label", "Rewind 5 seconds");
+  await expect(page.locator(`${player} [data-seek="5"]`)).toHaveAttribute("aria-label", "Forward 5 seconds");
+  await expect(page.locator(`${player} [data-elapsed]`)).toHaveText("0:22");
+  await expect(page.locator(`${player} [data-remaining]`)).toHaveText("-0:14");
+  await expect(page.locator(`${player} input`)).toHaveAttribute("aria-label", "Audio progress");
+  await expect(page.locator(`${player} option[value="1.75"]`)).toHaveCount(1);
+  await expect(page.locator(`${player} [data-playback-row]`)).not.toContainText(/Chunk|Queue|Part|Stop|Playing/);
   await expectPlayerContained(page);
+  if (process.env.MOCHI_VISUAL_PROOF_DIR) {
+    await page.screenshot({ path: `${process.env.MOCHI_VISUAL_PROOF_DIR}/player-playback-320.png` });
+  }
 
   await renderPlayerState(page, {
     session, generation,
@@ -270,20 +324,22 @@ test("compact player uses one stateful action and responsive part controls", asy
     queue: { currentIndex: 1, entries: [{}, {}, {}] },
   });
   await expect(page.locator(`${player} [data-primary]`)).toHaveAttribute("aria-label", "Resume audio");
-  await expect(page.locator(`${player} [data-part]`)).toHaveText("Part 2 of 3");
-  await expect(page.locator(`${player} [data-previous]`)).toBeEnabled();
-  await expect(page.locator(`${player} [data-next]`)).toBeEnabled();
   await expectPlayerContained(page);
 
   await page.setViewportSize({ width: 375, height: 667 });
   await expectPlayerContained(page);
+  await page.setViewportSize({ width: 768, height: 720 });
+  await expectPlayerContained(page);
+  if (process.env.MOCHI_VISUAL_PROOF_DIR) {
+    await page.screenshot({ path: `${process.env.MOCHI_VISUAL_PROOF_DIR}/player-paused-768.png` });
+  }
   await renderPlayerState(page, {
     session, generation,
     playback: { status: "ended", requestId: "request_ui_123", currentTime: 36, duration: 36, playbackRate: 1 },
     queue: { currentIndex: 0, entries: [{}] },
   });
-  await expect(page.locator(`${player} [data-player-status]`)).toHaveText("Playback finished");
   await expect(page.locator(`${player} [data-primary]`)).toHaveAttribute("aria-label", "Replay audio");
+  await expect(page.locator(`${player} [data-remaining]`)).toHaveText("-0:00");
   await renderPlayerState(page, {
     session: { ownsPlayback: false, otherTabActive: false },
     generation: { status: "failed", ownsGeneration: true, cancellable: false },
@@ -293,9 +349,46 @@ test("compact player uses one stateful action and responsive part controls", asy
   await expect(page.locator(`${player} [data-player-status]`)).toHaveText("Could not prepare audio");
   await expect(page.locator(`${player} [data-action="retry-generation"]`)).toBeVisible();
   await expect(page.locator(`${player} [data-action="cancel-generation"]`)).toBeHidden();
-  await expect(page.locator(`${player} [data-controls]`)).toBeHidden();
-  await page.locator(`${player} [data-close]`).click();
+  await expect(page.locator(`${player} [data-playback-row]`)).toBeHidden();
+  await page.locator(`${player} [data-close]:visible`).click();
   await expect(page.locator(player)).toHaveCount(0);
+});
+
+test("iPod seek controls move exactly five seconds and clamp to the audio bounds", async () => {
+  longAudio = true;
+  const page = await genericPage();
+  const popup = await enable(page);
+  await page.locator("#first").hover();
+  await page.locator(passageButton).click();
+  const primary = page.locator(`${player} [data-primary]`);
+  await expect(primary).toHaveAttribute("aria-label", "Pause audio");
+  await primary.click();
+  await expect.poll(async () => (await physicalPlayback()).status).toBe("paused");
+  const progress = page.locator(`${player} input[aria-label="Audio progress"]`);
+  const seekTo = async (seconds) => {
+    await progress.evaluate((node, value) => {
+      node.value = String(value);
+      node.dispatchEvent(new Event("change", { bubbles: true }));
+    }, seconds);
+    await expect.poll(async () => (await physicalPlayback()).currentTime)
+      .toBeCloseTo(seconds, 1);
+  };
+
+  await seekTo(2);
+  await page.locator(`${player} [data-seek="5"]`).click();
+  await expect.poll(async () => (await physicalPlayback()).currentTime).toBeCloseTo(7, 1);
+  await page.locator(`${player} [data-seek="-5"]`).click();
+  await expect.poll(async () => (await physicalPlayback()).currentTime).toBeCloseTo(2, 1);
+  await seekTo(1);
+  await page.locator(`${player} [data-seek="-5"]`).click();
+  await expect.poll(async () => (await physicalPlayback()).currentTime).toBeCloseTo(0, 1);
+  await seekTo(10);
+  await page.locator(`${player} [data-seek="5"]`).click();
+  await expect.poll(async () => {
+    const playback = await physicalPlayback();
+    return playback.duration - playback.currentTime;
+  }).toBeCloseTo(0, 1);
+  await popup.close();
 });
 
 test("LeetCode adapter preserves inline code, deduplicates math, and exposes page reading", async () => {
