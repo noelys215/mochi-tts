@@ -1,4 +1,5 @@
 import { createQueueManager } from "./queue-manager.js";
+import { createPlaybackSession } from "./playback-session.js";
 import { requestAudio, requestBackendMetadata } from "../shared/backend-client.js";
 import { evaluateBudget, priceForMode } from "../shared/budget.js";
 import { chunkText } from "../shared/chunking.js";
@@ -6,10 +7,10 @@ import { speechText } from "../shared/dsa-normalizer.js";
 import {
   MESSAGE_TYPES,
   validateArticleReadMessage,
-  validateHoverPassageReadMessage,
   validateInPageReadMessage,
   validatePlaybackCommand,
   validatePlaybackState,
+  validateRegionChangedMessage,
   validateSelectionReadMessage,
 } from "../shared/messages.js";
 import {
@@ -27,7 +28,9 @@ const CONTEXT_MENU_ID = "read-with-mochi-audio";
 const OFFSCREEN_PATH = "offscreen/offscreen.html";
 let creatingOffscreenDocument;
 let usageMutation = Promise.resolve();
-const inPageTabs = new Set();
+const passageHoverTabs = new Set();
+const tabRegions = new Map();
+const playbackSession = createPlaybackSession();
 let latestPlayback = {
   status: "idle", requestId: null, currentTime: 0, duration: 0, playbackRate: 1,
 };
@@ -41,7 +44,23 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
 });
 
-chrome.tabs.onRemoved.addListener((tabId) => inPageTabs.delete(tabId));
+chrome.tabs.onRemoved.addListener((tabId) => {
+  passageHoverTabs.delete(tabId);
+  tabRegions.delete(tabId);
+  if (playbackSession.owns(tabId)) stopPlaybackSession().catch(() => {});
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  const session = playbackSession.snapshot();
+  if (!session || session.ownerTabId !== tabId || !changeInfo.url) return;
+  if (comparablePageUrl(changeInfo.url) !== comparablePageUrl(session.sourceUrl)) {
+    stopPlaybackSession().catch(() => {});
+  }
+});
+
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+  sendTabPlayerState(tabId).catch(() => {});
+});
 
 async function storageState() {
   const value = await chrome.storage.local.get([
@@ -132,8 +151,8 @@ async function sendPlayback(type, payload) {
   return response;
 }
 
-function sharedPlayerState() {
-  return { playback: latestPlayback, queue: queue.state() };
+function sharedPlayerState(tabId) {
+  return playbackSession.viewFor(tabId, latestPlayback, queue.state());
 }
 
 async function restorePlaybackState() {
@@ -147,22 +166,34 @@ async function restorePlaybackState() {
     });
     if (response?.ok) latestPlayback = response.state;
   }
-  return sharedPlayerState();
+  return { playback: latestPlayback, queue: queue.state() };
 }
 
-function broadcastPlayerState() {
-  const payload = sharedPlayerState();
-  for (const tabId of inPageTabs) {
+async function sendTabPlayerState(tabId) {
+  if (!passageHoverTabs.has(tabId)) return;
+  await chrome.tabs.sendMessage(tabId, {
+    target: "content",
+    type: MESSAGE_TYPES.TAB_PLAYBACK_STATE_CHANGED,
+    payload: sharedPlayerState(tabId),
+  });
+}
+
+function broadcastPlayerState(additionalTabIds = []) {
+  const session = playbackSession.snapshot();
+  const recipients = new Set([...passageHoverTabs, ...additionalTabIds]);
+  if (session) recipients.add(session.ownerTabId);
+  for (const tabId of recipients) {
     chrome.tabs.sendMessage(tabId, {
       target: "content",
-      type: MESSAGE_TYPES.IN_PAGE_PLAYER_STATE_CHANGED,
-      payload,
-    }).catch(() => inPageTabs.delete(tabId));
+      type: MESSAGE_TYPES.TAB_PLAYBACK_STATE_CHANGED,
+      payload: sharedPlayerState(tabId),
+    }).catch(() => passageHoverTabs.delete(tabId));
   }
+  chrome.runtime.sendMessage({ type: MESSAGE_TYPES.TAB_PLAYBACK_STATE_CHANGED }).catch(() => {});
 }
 
 const queue = createQueueManager({
-  onStateChange: broadcastPlayerState,
+  onStateChange: () => broadcastPlayerState(),
   async generate(entry, signal) {
     const local = await storageState();
     const backend = await requestBackendMetadata({ backendUrl: local.settings.backendUrl });
@@ -217,6 +248,42 @@ async function readAndPlay(payload, source) {
   });
 }
 
+async function activeTabForExtension(sender) {
+  if (sender.tab?.id && Number.isInteger(sender.tab.id)) return sender.tab;
+  if (!sender.url?.startsWith(chrome.runtime.getURL(""))) return null;
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  return tab?.id ? tab : null;
+}
+
+async function startOwnedPlayback(payload, sourceType, tab) {
+  const previous = playbackSession.snapshot();
+  playbackSession.begin({
+    tabId: tab.id,
+    windowId: tab.windowId,
+    sourceUrl: payload.pageUrl || tab.url,
+    sourceType,
+    queueId: payload.requestId,
+    regionId: payload.regionId || null,
+  });
+  broadcastPlayerState(previous ? [previous.ownerTabId] : []);
+  try {
+    const result = await readAndPlay(payload, sourceType);
+    broadcastPlayerState(previous ? [previous.ownerTabId] : []);
+    return result;
+  } catch (error) {
+    if (playbackSession.owns(tab.id)) playbackSession.clear();
+    broadcastPlayerState(previous ? [previous.ownerTabId] : []);
+    throw error;
+  }
+}
+
+async function stopPlaybackSession() {
+  const previous = playbackSession.clear();
+  await queue.clear();
+  broadcastPlayerState(previous ? [previous.ownerTabId] : []);
+  return latestPlayback;
+}
+
 function comparablePageUrl(value) {
   try {
     const url = new URL(value);
@@ -227,20 +294,14 @@ function comparablePageUrl(value) {
   }
 }
 
-chrome.contextMenus.onClicked.addListener((info) => {
+chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId !== CONTEXT_MENU_ID) return;
   const text = typeof info.selectionText === "string" ? info.selectionText.trim() : "";
-  if (text) readAndPlay({ text, requestId: crypto.randomUUID() }, "context-menu")
+  if (text && tab?.id) startOwnedPlayback({
+    text, requestId: crypto.randomUUID(), pageUrl: tab.url,
+  }, "context-menu", tab)
     .catch((error) => console.error("Selection read failed:", error.message));
 });
-
-const queueHandlers = {
-  [MESSAGE_TYPES.QUEUE_STATE_REQUEST]: () => queue.state(),
-  [MESSAGE_TYPES.QUEUE_NEXT]: () => queue.next(),
-  [MESSAGE_TYPES.QUEUE_PREVIOUS]: () => queue.previous(),
-  [MESSAGE_TYPES.QUEUE_STOP]: () => queue.stop(),
-  [MESSAGE_TYPES.QUEUE_CLEAR]: () => queue.clear(),
-};
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === MESSAGE_TYPES.PLAYBACK_STATE_CHANGED) {
@@ -250,58 +311,79 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
-  if (message?.type === MESSAGE_TYPES.IN_PAGE_CONTROLS_STATUS_CHANGED) {
+  if (message?.type === MESSAGE_TYPES.PASSAGE_HOVER_CONTROLS_STATUS_CHANGED) {
     if (!sender.tab?.id || comparablePageUrl(message.payload?.pageUrl) !== comparablePageUrl(sender.tab.url)) {
-      sendResponse({ ok: false, error: "Invalid in-page controls source." });
+      sendResponse({ ok: false, error: "Invalid passage-hover controls source." });
       return false;
     }
-    if (message.payload.enabled === true) inPageTabs.add(sender.tab.id);
-    else inPageTabs.delete(sender.tab.id);
-    sendResponse({ ok: true, enabled: inPageTabs.has(sender.tab.id) });
+    if (message.payload.enabled === true) passageHoverTabs.add(sender.tab.id);
+    else passageHoverTabs.delete(sender.tab.id);
+    sendResponse({ ok: true, enabled: passageHoverTabs.has(sender.tab.id) });
     return false;
   }
 
-  if (message?.type === MESSAGE_TYPES.IN_PAGE_PLAYER_STATE_REQUEST) {
+  if (message?.type === MESSAGE_TYPES.PRIMARY_CONTENT_REGION_CHANGED) {
+    const error = !sender.tab?.id ? "Invalid content-region source." :
+      validateRegionChangedMessage(message) ||
+      (comparablePageUrl(message.payload.pageUrl) !== comparablePageUrl(sender.tab.url)
+        ? "Page URL does not match the sender tab." : null);
+    if (error) {
+      sendResponse({ ok: false, error });
+      return false;
+    }
+    const previous = tabRegions.get(sender.tab.id);
+    tabRegions.set(sender.tab.id, {
+      regionId: message.payload.regionId,
+      pageUrl: message.payload.pageUrl,
+    });
+    const session = playbackSession.snapshot();
+    if (session?.ownerTabId === sender.tab.id && previous &&
+        session.regionId && session.regionId !== message.payload.regionId) {
+      stopPlaybackSession().catch(() => {});
+    }
+    sendResponse({ ok: true });
+    return false;
+  }
+
+  if (message?.type === MESSAGE_TYPES.TAB_PLAYBACK_STATE_REQUEST) {
     if (!sender.tab?.id) {
       sendResponse({ ok: false, error: "Invalid player state source." });
       return false;
     }
-    inPageTabs.add(sender.tab.id);
+    passageHoverTabs.add(sender.tab.id);
     restorePlaybackState()
-      .then((state) => sendResponse({ ok: true, state }))
+      .then(() => sendResponse({ ok: true, state: sharedPlayerState(sender.tab.id) }))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
 
-  const isInPageRead = message?.type === MESSAGE_TYPES.IN_PAGE_PASSAGE_READ ||
-    message?.type === MESSAGE_TYPES.IN_PAGE_ARTICLE_READ;
+  const isInPageRead = message?.type === MESSAGE_TYPES.PASSAGE_HOVER_READ ||
+    message?.type === MESSAGE_TYPES.PAGE_HOVER_READ;
   if (isInPageRead) {
     const error = !sender.tab?.id
       ? "Invalid in-page request source."
       : validateInPageReadMessage(message) ||
         (comparablePageUrl(message.payload.pageUrl) !== comparablePageUrl(sender.tab.url)
           ? "Page URL does not match the sender tab." : null);
-    const expectedSource = message.type === MESSAGE_TYPES.IN_PAGE_ARTICLE_READ ? "article" : "passage";
+    const expectedSource = message.type === MESSAGE_TYPES.PAGE_HOVER_READ ? "page" : "hover-passage";
     if (error || message.payload?.source !== expectedSource) {
       sendResponse({ ok: false, error: error || "Invalid in-page source type." });
       return false;
     }
-    inPageTabs.add(sender.tab.id);
-    storageState().then(({ settings }) => readAndPlay({
+    passageHoverTabs.add(sender.tab.id);
+    storageState().then(({ settings }) => startOwnedPlayback({
       ...message.payload,
       text: speechText(message.payload.text, settings.dsaNormalization),
-    }, expectedSource === "article" ? "article" : "hover"))
+    }, expectedSource, sender.tab))
       .then(({ usage }) => sendResponse({ ok: true, usage }))
       .catch((failure) => sendResponse({ ok: false, error: failure.message }));
     return true;
   }
 
-  const isTrustedPlaybackSurface = Boolean(sender.tab?.id) ||
-    sender.url?.startsWith(chrome.runtime.getURL(""));
-  if (isTrustedPlaybackSurface && !message?.target &&
-      message?.type === MESSAGE_TYPES.PLAYBACK_STATE_REQUEST) {
-    restorePlaybackState()
-      .then((state) => sendResponse({ ok: true, state: state.playback }))
+  const isTrustedPlaybackSurface = Boolean(sender.tab?.id) || sender.url?.startsWith(chrome.runtime.getURL(""));
+  if (isTrustedPlaybackSurface && !message?.target && message?.type === MESSAGE_TYPES.PLAYBACK_STATE_REQUEST) {
+    Promise.all([restorePlaybackState(), activeTabForExtension(sender)])
+      .then(([, tab]) => sendResponse({ ok: true, state: sharedPlayerState(tab?.id) }))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
@@ -312,44 +394,47 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     MESSAGE_TYPES.PLAYBACK_STOP,
     MESSAGE_TYPES.PLAYBACK_SEEK,
     MESSAGE_TYPES.PLAYBACK_RATE_SET,
+    MESSAGE_TYPES.QUEUE_NEXT,
+    MESSAGE_TYPES.QUEUE_PREVIOUS,
   ].includes(message?.type);
   if (isTabPlaybackCommand) {
-    const error = validatePlaybackCommand(message);
-    if (error) {
-      sendResponse({ ok: false, error });
-      return false;
-    }
-    const operation = message.type === MESSAGE_TYPES.PLAYBACK_STOP
-      ? queue.stop().then(() => ({ ok: true, state: latestPlayback }))
-      : sendPlayback(message.type, message.payload);
-    operation.then((response) => {
+    const isQueueCommand = [MESSAGE_TYPES.QUEUE_NEXT, MESSAGE_TYPES.QUEUE_PREVIOUS].includes(message.type);
+    const error = isQueueCommand ? null : validatePlaybackCommand(message);
+    if (error) return void sendResponse({ ok: false, error });
+    activeTabForExtension(sender).then(async (tab) => {
+      if (!tab || !playbackSession.owns(tab.id)) throw new Error("Playback belongs to another tab.");
+      if (message.type === MESSAGE_TYPES.PLAYBACK_STOP) await stopPlaybackSession();
+      else if (message.type === MESSAGE_TYPES.QUEUE_NEXT) await queue.next();
+      else if (message.type === MESSAGE_TYPES.QUEUE_PREVIOUS) await queue.previous();
+      else await sendPlayback(message.type, message.payload);
       broadcastPlayerState();
-      sendResponse(response);
-    }).catch((failure) => sendResponse({ ok: false, error: failure.message }));
+      return { ok: true, state: sharedPlayerState(tab.id) };
+    }).then(sendResponse)
+      .catch((failure) => sendResponse({ ok: false, error: failure.message }));
+    return true;
+  }
+
+  if (message?.type === MESSAGE_TYPES.PLAYBACK_SESSION_STOP &&
+      sender.url?.startsWith(chrome.runtime.getURL(""))) {
+    stopPlaybackSession()
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
 
   const isSelection = message?.type === MESSAGE_TYPES.SELECTION_READ_REQUEST;
-  const isHover = message?.type === MESSAGE_TYPES.HOVER_PASSAGE_READ;
   const isArticle = message?.type === MESSAGE_TYPES.ARTICLE_READ_REQUEST;
-  if (isSelection || isHover || isArticle) {
-    if (isHover && !sender.tab?.id) {
-      sendResponse({ ok: false, error: "Invalid hover request source." });
-      return false;
-    }
-    const error = isHover
-      ? validateHoverPassageReadMessage(message)
-      : isArticle
-        ? validateArticleReadMessage(message)
-        : validateSelectionReadMessage(message);
+  if (isSelection || isArticle) {
+    const error = isArticle ? validateArticleReadMessage(message) : validateSelectionReadMessage(message);
     if (error) {
       sendResponse({ ok: false, error });
       return false;
     }
-    const source = isArticle || (isHover && message.payload.source === "article")
-      ? "article"
-      : isHover ? "hover" : "selection";
-    readAndPlay(message.payload, source)
+    const source = isArticle ? "page" : "selection";
+    activeTabForExtension(sender).then((tab) => {
+      if (!tab) throw new Error("No active page is available for playback.");
+      return startOwnedPlayback({ ...message.payload, pageUrl: tab.url }, source, tab);
+    })
       .then(({ usage }) => sendResponse({ ok: true, usage }))
       .catch((failure) => sendResponse({ ok: false, error: failure.message }));
     return true;
@@ -388,7 +473,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message?.type === MESSAGE_TYPES.APP_STATE_REQUEST) {
-    storageState().then(async ({ records, settings }) => {
+    Promise.all([storageState(), activeTabForExtension(sender)]).then(async ([{ records, settings }, tab]) => {
       let backend;
       try {
         const metadata = await requestBackendMetadata({ backendUrl: settings.backendUrl });
@@ -401,7 +486,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         state: {
           settings,
           aggregates: aggregateUsage(records),
-          queue: queue.state(),
+          queue: sharedPlayerState(tab?.id).queue,
           backend,
         },
       });
@@ -409,15 +494,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message?.type === MESSAGE_TYPES.PLAYBACK_ENDED) {
+  if (message?.type === MESSAGE_TYPES.PLAYBACK_ENDED && sender.url?.endsWith(OFFSCREEN_PATH)) {
     queue.next().catch(() => {});
     return false;
-  }
-  if (queueHandlers[message?.type]) {
-    Promise.resolve(queueHandlers[message.type]())
-      .then((state) => sendResponse({ ok: true, state }))
-      .catch((error) => sendResponse({ ok: false, error: error.message }));
-    return true;
   }
   if (message?.type === MESSAGE_TYPES.USAGE_STATE_REQUEST) {
     usageSummary().then((state) => sendResponse({ ok: true, state }));
