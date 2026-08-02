@@ -18,12 +18,13 @@ function element(tag, text = "", children = [], options = {}) {
     tag, ownText: text, children, parent: null, hidden: Boolean(options.hidden),
     isConnected: options.connected !== false,
     ownerDocument: documentObject,
+    get parentElement() { return this.parent; },
     get tagName() { return tag.toUpperCase(); },
     get textContent() { return [this.ownText, ...this.children.map((child) => child.textContent)].join(" "); },
     matches(selector) { return selector.split(",").map((part) => part.trim()).includes(this.tag); },
     closest(selector) {
       for (let current = this; current; current = current.parent) {
-        if (selector === "p,article,section,div" && ["p", "article", "section", "div"].includes(current.tag)) return current;
+        if (selector.split(",").map((part) => part.trim()).includes(current.tag)) return current;
         if (selector.includes("nav") && ignoredTags.has(current.tag)) return current;
         if (selector.includes("[hidden]") && current.hidden) return current;
         if (selector.includes("data-mochi-audio-ui") && current.owned) return current;
@@ -60,7 +61,7 @@ test("paragraphs win over wrapper divs without duplicate controls", () => {
   const paragraph = element("p", "Focused paragraph prose long enough to become a useful reading passage.");
   const wrapper = element("div", "", [paragraph]);
   const article = element("article", "", [wrapper]);
-  assert.deepEqual([...targets.selectPassageTargets(article, 30)], [paragraph]);
+  assert.equal(targets.findPassageTarget(paragraph, 30, "skip", article), paragraph);
 });
 
 test("leaf text-heavy divs qualify while ignored and link-heavy regions do not", () => {
@@ -82,16 +83,14 @@ test("prose-heavy list items and blockquotes qualify after paragraph priority", 
   const paragraph = element("p", "A nested paragraph remains the smallest meaningful readable passage.");
   const wrappedQuote = element("blockquote", "", [paragraph]);
   const root = element("div", "", [listItem, quote, wrappedQuote]);
-  assert.deepEqual([...targets.selectPassageTargets(root, 30)], [paragraph, listItem, quote]);
+  assert.equal(targets.findPassageTarget(listItem, 30, "skip", root), listItem);
+  assert.equal(targets.findPassageTarget(quote, 30, "skip", root), quote);
+  assert.equal(targets.findPassageTarget(paragraph, 30, "skip", root), paragraph);
 });
 
-test("article and main elements never become normal passage targets", () => {
-  assert.deepEqual([...targets.selectPassageTargets(
-    element("article", "Direct article prose is reserved for the page-reading action."), 20,
-  )], []);
-  assert.deepEqual([...targets.selectPassageTargets(
-    element("main", "Direct main prose is reserved for the page-reading action."), 20,
-  )], []);
+test("semantic containers are the final passage fallback", () => {
+  const article = element("article", "Direct article prose remains a final hover fallback when no child qualifies.");
+  assert.equal(targets.findPassageTarget(article, 20, "skip", article), article);
 });
 
 test("one suitable article is selected for whole-page reading", () => {
@@ -102,7 +101,8 @@ test("one suitable article is selected for whole-page reading", () => {
     querySelector: () => null,
     body: null,
   };
-  assert.equal(targets.findPageTarget(fakeDocument, 30), long);
+  targetContext.__mochiAudioContentRegion = { resolvePrimaryContentRegion: () => ({ element: long }) };
+  assert.equal(targets.findPageTarget(fakeDocument, 30).element, long);
 });
 
 test("whole-page detection falls back from article to main and extractor root", () => {
@@ -112,15 +112,14 @@ test("whole-page detection falls back from article to main and extractor root", 
     querySelector: (selector) => selector === "main" ? main : null,
     body: null,
   };
-  assert.equal(targets.findPageTarget(mainDocument, 30), main);
+  targetContext.__mochiAudioContentRegion = { resolvePrimaryContentRegion: () => ({ element: main }) };
+  assert.equal(targets.findPageTarget(mainDocument, 30).element, main);
 
   const body = element("body", "Fallback body prose remains available through the shared article extractor.");
   const bodyDocument = { querySelectorAll: () => [], querySelector: () => null, body };
-  targetContext.__mochiAudioArticleExtractor = {
-    findRoot: () => body,
-    extractFromRoot: (root) => root.textContent,
-  };
-  assert.equal(targets.findPageTarget(bodyDocument, 30), body);
+  targetContext.__mochiAudioArticleExtractor = { extractFromRoot: (root) => root.textContent };
+  targetContext.__mochiAudioContentRegion = { resolvePrimaryContentRegion: () => ({ element: body }) };
+  assert.equal(targets.findPageTarget(bodyDocument, 30).element, body);
 });
 
 test("overlay positions clamp to viewport gutters and cleanup drops disconnected targets", () => {

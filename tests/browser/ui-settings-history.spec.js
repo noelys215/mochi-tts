@@ -72,6 +72,8 @@ test("popup is a compact controller with usage and advanced-page navigation", as
   await expect(page.locator("#usage-today")).toBeVisible();
   await expect(page.locator("#usage-month")).toBeVisible();
   await expect(page.locator("#playback-toggle")).toHaveCount(1);
+  await expect(page.locator("#passage-hover-toggle")).toHaveText("Passage hover controls: Off");
+  await expect(page.locator("#hover-toggle,#in-page-toggle")).toHaveCount(0);
   await expect(page.locator('[data-playback="PLAYBACK_PLAY"], [data-playback="PLAYBACK_PAUSE"], [data-playback="PLAYBACK_RESUME"]')).toHaveCount(0);
   await expect(page.locator("#export-usage,#reset-usage,#recent-history,#custom-price,#monthly-limit,#warning-threshold,#hard-stop")).toHaveCount(0);
   await expect(page.locator("#override-once")).toBeHidden();

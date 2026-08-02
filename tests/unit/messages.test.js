@@ -6,14 +6,15 @@ import {
   validateInPageReadMessage,
   validatePlaybackCommand,
   validatePlaybackState,
+  validateRegionChangedMessage,
 } from "../../extension/shared/messages.js";
 
 function passage(overrides = {}) {
   return {
-    type: MESSAGE_TYPES.IN_PAGE_PASSAGE_READ,
+    type: MESSAGE_TYPES.PASSAGE_HOVER_READ,
     payload: {
-      text: "Readable passage text.", requestId: "request_123", source: "passage",
-      elementType: "p", pageUrl: "https://example.com/lesson", ...overrides,
+      text: "Readable passage text.", requestId: "request_123", source: "hover-passage",
+      elementType: "p", pageUrl: "https://example.com/lesson", regionId: "region_123", ...overrides,
     },
   };
 }
@@ -27,6 +28,23 @@ test("validates in-page request identity, source, element, URL, and UTF-8 size",
   assert.match(validateInPageReadMessage(passage({ pageUrl: "javascript:alert(1)" })), /URL/);
   assert.match(validateInPageReadMessage(passage({ requestId: "bad" })), /request ID/);
   assert.match(validateInPageReadMessage(passage({ text: "🐟".repeat(125_001) })), /byte limit/);
+});
+
+test("rejects obsolete hover messages and validates region changes", () => {
+  assert.match(validateInPageReadMessage({
+    ...passage(), type: "HOVER_PASSAGE_READ",
+  }), /Unsupported/);
+  assert.equal(validateRegionChangedMessage({
+    type: MESSAGE_TYPES.PRIMARY_CONTENT_REGION_CHANGED,
+    payload: {
+      pageUrl: "https://leetcode.com/learn/window", regionId: "region_123",
+      region: { strategy: "site-adapter", confidence: 0.95, title: "Sliding window", siteId: "leetcode" },
+    },
+  }), null);
+  assert.match(validateRegionChangedMessage({
+    type: MESSAGE_TYPES.PRIMARY_CONTENT_REGION_CHANGED,
+    payload: { pageUrl: "javascript:alert(1)", regionId: null, region: null },
+  }), /URL/);
 });
 
 test("validates seek and playback-rate ranges", () => {
