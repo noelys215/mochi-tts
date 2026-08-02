@@ -1,11 +1,11 @@
 (() => {
-  if (globalThis.__fishStudyReaderHoverReader) {
+  if (globalThis.__mochiAudioHoverReader) {
     return;
   }
 
-  const api = globalThis.__fishStudyReaderHoverTarget;
-  const UI_ATTRIBUTE = "data-fish-study-reader-ui";
-  const HIGHLIGHT_CLASS = "__fish-study-reader-hover-target";
+  const api = globalThis.__mochiAudioHoverTarget;
+  const UI_ATTRIBUTE = "data-mochi-audio-ui";
+  const HIGHLIGHT_CLASS = "__mochi-audio-hover-target";
   const HIDE_DELAY_MS = 140;
   const state = {
     enabled: false,
@@ -233,5 +233,5 @@
     return false;
   });
 
-  globalThis.__fishStudyReaderHoverReader = Object.freeze({ disable, enable });
+  globalThis.__mochiAudioHoverReader = Object.freeze({ disable, enable });
 })();

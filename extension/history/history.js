@@ -27,7 +27,7 @@ async function load() {
 document.querySelector("#export").addEventListener("click", async () => {
   const response = await chrome.runtime.sendMessage({ type: MESSAGE_TYPES.USAGE_EXPORT_REQUEST });
   const url = URL.createObjectURL(new Blob([JSON.stringify(response.data, null, 2)], { type: "application/json" }));
-  const link = document.createElement("a"); link.href = url; link.download = "fish-study-reader-usage.json"; link.click(); URL.revokeObjectURL(url);
+  const link = document.createElement("a"); link.href = url; link.download = "mochi-audio-usage.json"; link.click(); URL.revokeObjectURL(url);
   document.querySelector("#status").textContent = "History exported.";
 });
 

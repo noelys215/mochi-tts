@@ -1,6 +1,6 @@
 # Architecture
 
-Fish Study Reader has four boundaries:
+Mochi Audio has four boundaries:
 
 1. Injected content scripts extract an explicit selection, eligible hover passage, or cleaned article. They never receive credentials.
 2. The MV3 service worker validates runtime messages, enforces budgets, chunks text, coordinates bounded generation, and stores settings plus successful-request metadata.

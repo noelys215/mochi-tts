@@ -99,7 +99,7 @@ test("history lists metadata, excludes text, exports, and resets with confirmati
   await expect(page.locator("body")).not.toContainText("Secret study passage");
   const download = page.waitForEvent("download");
   await page.locator("#export").click();
-  expect((await download).suggestedFilename()).toBe("fish-study-reader-usage.json");
+  expect((await download).suggestedFilename()).toBe("mochi-audio-usage.json");
   page.once("dialog", (dialog) => dialog.accept());
   await page.locator("#reset").click();
   await expect(page.locator("#history-body")).toContainText("No generated requests yet.");

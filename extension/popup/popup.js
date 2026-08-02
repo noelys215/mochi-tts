@@ -121,7 +121,7 @@ async function extractArticle(tabId, codeMode) {
     });
     const results = await chrome.scripting.executeScript({
       target: { tabId },
-      func: (mode) => globalThis.__fishStudyReaderArticleExtractor.extractArticle({ codeMode: mode }),
+      func: (mode) => globalThis.__mochiAudioArticleExtractor.extractArticle({ codeMode: mode }),
       args: [codeMode],
     });
     return results[0]?.result?.text || "";
@@ -378,7 +378,7 @@ document.querySelector("#export-usage").addEventListener("click", async () => {
   const url = URL.createObjectURL(new Blob([JSON.stringify(response.data, null, 2)], { type: "application/json" }));
   const link = document.createElement("a");
   link.href = url;
-  link.download = "fish-study-reader-usage.json";
+  link.download = "mochi-audio-usage.json";
   link.click();
   URL.revokeObjectURL(url);
   setStatus("Usage exported.");

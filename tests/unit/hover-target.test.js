@@ -9,7 +9,7 @@ const source = await readFile(
 );
 const context = vm.createContext({});
 vm.runInContext(source, context);
-const api = context.__fishStudyReaderHoverTarget;
+const api = context.__mochiAudioHoverTarget;
 
 const ignoredTags = new Set([
   "nav",
@@ -44,7 +44,7 @@ function fakeElement(tag, { text = "", parent = null, hidden = false, owned = fa
           return current;
         }
         if (
-          selector.includes("data-fish-study-reader-ui") &&
+          selector.includes("data-mochi-audio-ui") &&
           (ignoredTags.has(current.tag) || current.owned)
         ) {
           return current;

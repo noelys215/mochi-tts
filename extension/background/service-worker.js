@@ -19,7 +19,7 @@ import {
   mergeUsageSettings,
 } from "../shared/usage.js";
 
-const CONTEXT_MENU_ID = "read-with-fish-study-reader";
+const CONTEXT_MENU_ID = "read-with-mochi-audio";
 const OFFSCREEN_PATH = "offscreen/offscreen.html";
 let creatingOffscreenDocument;
 let usageMutation = Promise.resolve();
@@ -27,7 +27,7 @@ let usageMutation = Promise.resolve();
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => chrome.contextMenus.create({
     id: CONTEXT_MENU_ID,
-    title: "Read with Fish Study Reader",
+    title: "Read with Mochi Audio",
     contexts: ["selection"],
   }));
   chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });

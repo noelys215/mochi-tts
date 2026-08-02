@@ -1,12 +1,12 @@
 (() => {
-  if (globalThis.__fishStudyReaderArticleExtractor) return;
+  if (globalThis.__mochiAudioArticleExtractor) return;
 
   const BLOCK_SELECTOR = "h1,h2,h3,h4,h5,h6,p,li";
   const EXCLUDED_SELECTOR = [
     "nav", "header", "footer", "aside", "form", "button", "input",
     "textarea", "select", "script", "style", "[hidden]", "[aria-hidden=\"true\"]",
     "[role=\"navigation\"]", "[role=\"complementary\"]",
-    ".sidebar", ".navigation", "[data-fish-study-reader-ui]",
+    ".sidebar", ".navigation", "[data-mochi-audio-ui]",
   ].join(",");
 
   function normalizeText(value) {
@@ -90,7 +90,7 @@
     return { text: extractFromRoot(root, options), rootTag: root?.tagName?.toLowerCase() || null };
   }
 
-  globalThis.__fishStudyReaderArticleExtractor = Object.freeze({
+  globalThis.__mochiAudioArticleExtractor = Object.freeze({
     codeComments, extractArticle, extractFromRoot, findRoot, isExcluded,
     isVisible, normalizeText, visibleText,
   });

@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Fish Study Reader",
+  "name": "Mochi Audio",
   "version": "0.1.0",
   "description": "Read selected page text through a local mock text-to-speech server.",
   "minimum_chrome_version": "116",
@@ -20,7 +20,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Fish Study Reader",
+    "default_title": "Mochi Audio",
     "default_popup": "popup/popup.html"
   },
   "options_page": "options/options.html"

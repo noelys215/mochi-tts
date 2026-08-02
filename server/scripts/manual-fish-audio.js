@@ -15,7 +15,7 @@ if (!process.argv.includes("--confirm")) {
     throw new Error("Set FISH_AUDIO_MOCK_MODE=false before manual provider synthesis.");
   }
 
-  const text = "Fish Study Reader manual integration test.";
+  const text = "Mochi Audio manual integration test.";
   const result = await createTtsProvider(config).synthesize({
     text,
     inputBytes: utf8ByteLength(text),

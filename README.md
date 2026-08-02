@@ -1,4 +1,4 @@
-# Fish Study Reader
+# Mochi Audio
 
 A Manifest V3 Chrome extension that sends selected or extracted study text to a local Express text-to-speech backend. It supports selection, hover, and article reading, persistent playback, local cost estimates, spending safeguards, and text-free usage history.
 

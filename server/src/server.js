@@ -10,7 +10,7 @@ const app = createApp({
 
 app.listen(config.port, config.host, () => {
   console.log(
-    `Fish Study Reader ${config.mockMode ? "mock" : "provider"} server listening on ` +
+    `Mochi Audio ${config.mockMode ? "mock" : "provider"} server listening on ` +
       `http://${config.host}:${config.port}`,
   );
 });

@@ -73,7 +73,7 @@ async function extract(page, codeMode = "skip") {
     await chrome.scripting.executeScript({ target: { tabId: id }, files: ["content/article-extractor.js"] });
     const [result] = await chrome.scripting.executeScript({
       target: { tabId: id },
-      func: (value) => globalThis.__fishStudyReaderArticleExtractor.extractArticle({ codeMode: value }),
+      func: (value) => globalThis.__mochiAudioArticleExtractor.extractArticle({ codeMode: value }),
       args: [mode],
     });
     return result.result.text;

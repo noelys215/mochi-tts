@@ -9,7 +9,7 @@ import { createTtsProvider } from "../../server/src/tts-provider.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const extensionPath = path.join(projectRoot, "extension");
-const hoverButton = '[data-fish-study-reader-ui="button"]';
+const hoverButton = '[data-mochi-audio-ui="button"]';
 let context;
 let serviceWorker;
 let server;
@@ -170,8 +170,8 @@ test("hover shows one button, prioritizes the paragraph, and makes no request", 
 
   await expect(page.locator(hoverButton)).toHaveCount(1);
   await expect(page.locator(hoverButton)).toBeVisible();
-  await expect(page.locator("#paragraph")).toHaveClass(/__fish-study-reader-hover-target/);
-  await expect(page.locator("#article")).not.toHaveClass(/__fish-study-reader-hover-target/);
+  await expect(page.locator("#paragraph")).toHaveClass(/__mochi-audio-hover-target/);
+  await expect(page.locator("#article")).not.toHaveClass(/__mochi-audio-hover-target/);
   await page.waitForTimeout(220);
   expect(generatedTexts).toHaveLength(0);
 });
@@ -224,7 +224,7 @@ test("Escape removes hover UI and disables the mode", async () => {
 
   await expect(page.locator(hoverButton)).toHaveCount(0);
   await expect(page.locator("#paragraph")).not.toHaveClass(
-    /__fish-study-reader-hover-target/,
+    /__mochi-audio-hover-target/,
   );
   await expect
     .poll(async () =>

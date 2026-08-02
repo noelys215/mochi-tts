@@ -1,5 +1,5 @@
 (() => {
-  if (globalThis.__fishStudyReaderHoverTarget) {
+  if (globalThis.__mochiAudioHoverTarget) {
     return;
   }
 
@@ -15,7 +15,7 @@
     "select",
     "pre",
     "code",
-    "[data-fish-study-reader-ui]",
+    "[data-mochi-audio-ui]",
   ].join(",");
 
   function normalizeText(value) {
@@ -40,7 +40,7 @@
   }
 
   function getVisibleText(element) {
-    const extractor = globalThis.__fishStudyReaderArticleExtractor;
+    const extractor = globalThis.__mochiAudioArticleExtractor;
     if (extractor) {
       return extractor.extractFromRoot(element, { codeMode: "skip" });
     }
@@ -84,7 +84,7 @@
     return isEligible(article, minimumLength) ? article : null;
   }
 
-  globalThis.__fishStudyReaderHoverTarget = Object.freeze({
+  globalThis.__mochiAudioHoverTarget = Object.freeze({
     findHoverTarget,
     getVisibleText,
     isEligible,
