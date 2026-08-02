@@ -12,7 +12,8 @@
     "offscreen"
   ],
   "host_permissions": [
-    "http://127.0.0.1:3000/*"
+    "http://127.0.0.1/*",
+    "http://localhost/*"
   ],
   "background": {
     "service_worker": "background/service-worker.js",
@@ -21,5 +22,6 @@
   "action": {
     "default_title": "Fish Study Reader",
     "default_popup": "popup/popup.html"
-  }
+  },
+  "options_page": "options/options.html"
 }

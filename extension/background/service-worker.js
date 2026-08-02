@@ -123,7 +123,8 @@ async function sendPlayback(type, payload) {
 
 const queue = createQueueManager({
   async generate(entry, signal) {
-    const [backend, local] = await Promise.all([requestBackendMetadata(), storageState()]);
+    const local = await storageState();
+    const backend = await requestBackendMetadata({ backendUrl: local.settings.backendUrl });
     const monthCostMicrousd = aggregateUsage(local.records).month.estimatedCostMicrousd;
     const decision = evaluateBudget({
       inputBytes: byteLength(entry.text), monthCostMicrousd,
@@ -131,7 +132,12 @@ const queue = createQueueManager({
     });
     if (!decision.allowed) throw new Error(decision.reason);
     if (decision.consumeOverride) await saveSettings({ oneTimeOverride: false });
-    const result = await requestAudio({ text: entry.text, requestId: entry.requestId, signal });
+    const result = await requestAudio({
+      text: entry.text,
+      requestId: entry.requestId,
+      backendUrl: local.settings.backendUrl,
+      signal,
+    });
     const estimate = {
       estimatedCostMicrousd: local.settings.pricingMode === "custom"
         ? decision.estimatedCostMicrousd
@@ -146,17 +152,28 @@ const queue = createQueueManager({
       usage: { ...result.usage, ...estimate, warning: decision.warning },
     };
   },
-  play: (entry) => sendPlayback(MESSAGE_TYPES.PLAYBACK_LOAD, {
-    requestId: entry.requestId, audioUrl: entry.audioUrl,
-  }),
+  play: async (entry) => {
+    const { settings } = await storageState();
+    await sendPlayback(MESSAGE_TYPES.PLAYBACK_RATE_SET, {
+      rate: settings.defaultPlaybackSpeed,
+    });
+    return sendPlayback(MESSAGE_TYPES.PLAYBACK_LOAD, {
+      requestId: entry.requestId, audioUrl: entry.audioUrl,
+    });
+  },
   stop: async () => {
     try { await sendPlayback(MESSAGE_TYPES.PLAYBACK_STOP); } catch { /* Nothing loaded yet. */ }
   },
 });
 
 async function readAndPlay(payload, source) {
-  const backend = await requestBackendMetadata();
-  return queue.load({ ...payload, source, maxBytes: backend.maxInputBytes });
+  const local = await storageState();
+  const backend = await requestBackendMetadata({ backendUrl: local.settings.backendUrl });
+  return queue.load({
+    ...payload,
+    source,
+    maxBytes: Math.min(backend.maxInputBytes, local.settings.chunkLimit),
+  });
 }
 
 chrome.contextMenus.onClicked.addListener((info) => {
@@ -207,19 +224,42 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ ok: false, error: "No article text is available." });
       return false;
     }
-    Promise.all([requestBackendMetadata(), storageState()]).then(([backend, local]) => {
+    storageState().then(async (local) => {
+      const backend = await requestBackendMetadata({ backendUrl: local.settings.backendUrl });
       const inputBytes = byteLength(text);
       const price = priceForMode(local.settings, backend);
       sendResponse({
         ok: true,
         estimate: {
           inputBytes,
-          chunks: chunkText(text, backend.maxInputBytes).length,
+          chunks: chunkText(text, Math.min(backend.maxInputBytes, local.settings.chunkLimit)).length,
           estimatedCostMicrousd: estimateCostMicrousd(inputBytes, price),
           durationSeconds: Math.max(1, Math.round(text.trim().split(/\s+/u).length / 2.5)),
         },
       });
     }).catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
+  if (message?.type === MESSAGE_TYPES.APP_STATE_REQUEST) {
+    storageState().then(async ({ records, settings }) => {
+      let backend;
+      try {
+        const metadata = await requestBackendMetadata({ backendUrl: settings.backendUrl });
+        backend = { ...metadata, status: "connected" };
+      } catch (error) {
+        backend = { status: "unavailable", error: error.message };
+      }
+      sendResponse({
+        ok: true,
+        state: {
+          settings,
+          aggregates: aggregateUsage(records),
+          queue: queue.state(),
+          backend,
+        },
+      });
+    });
     return true;
   }
 

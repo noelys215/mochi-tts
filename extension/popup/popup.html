@@ -10,6 +10,14 @@
     <main>
       <h1>Fish Study Reader</h1>
       <p>Select text on the page, then read it through your local speech server.</p>
+      <section class="dashboard" aria-label="Reader status">
+        <div><span>Source</span><strong id="source-status">None</strong></div>
+        <div><span>Preview</span><strong id="preview-status">No text loaded</strong></div>
+        <div><span>Queue</span><strong id="queue-status">Empty</strong></div>
+        <div><span>Hover</span><strong id="hover-status">Off</strong></div>
+        <div><span>Backend</span><strong id="backend-status">Checking…</strong></div>
+        <div><span>Budget</span><strong id="budget-status">Free mode</strong></div>
+      </section>
       <button id="read-selection" type="button">Read selection</button>
       <button id="read-article" type="button">Read article</button>
       <button id="hover-toggle" type="button" aria-pressed="false">
@@ -76,6 +84,8 @@
           <button id="export-usage" type="button">Export JSON</button>
           <button id="reset-usage" type="button">Reset usage</button>
         </div>
+        <h3>Recent history</h3>
+        <ol id="recent-history" class="history-list"><li>No generated requests yet.</li></ol>
       </section>
       <section aria-labelledby="budget-heading">
         <h2 id="budget-heading">Spending safeguards</h2>
@@ -101,7 +111,11 @@
           <button id="override-once" type="button">Allow once</button>
         </div>
       </section>
-      <p id="status" role="status" aria-live="polite">Ready.</p>
+      <nav class="page-links" aria-label="Extension pages">
+        <button id="open-history" type="button">Full history</button>
+        <button id="open-options" type="button">All options</button>
+      </nav>
+      <p id="status" role="status" aria-live="polite" aria-atomic="true">Ready.</p>
     </main>
     <script type="module" src="popup.js"></script>
   </body>

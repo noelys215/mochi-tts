@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Fish Study Reader Options</title>
+    <link rel="stylesheet" href="options.css">
+  </head>
+  <body>
+    <main>
+      <h1>Fish Study Reader options</h1>
+      <p>Settings stay on this device. Provider API keys belong only in the local backend environment.</p>
+      <form id="options-form">
+        <fieldset>
+          <legend>Connection and pricing</legend>
+          <label>Backend URL <input id="backend-url" type="url" required></label>
+          <label>Pricing mode
+            <select id="pricing-mode">
+              <option value="free">Free</option><option value="paid">Paid server estimate</option><option value="custom">Custom estimate</option>
+            </select>
+          </label>
+          <label>Custom USD per million bytes <input id="custom-price" type="number" min="0" step="0.000001"></label>
+          <label>Monthly limit (USD) <input id="monthly-limit" type="number" min="0" step="0.01"></label>
+          <label>Warning threshold (%) <input id="warning-threshold" type="number" min="1" max="100"></label>
+          <label class="check"><input id="hard-stop" type="checkbox"> Hard stop above limit</label>
+        </fieldset>
+        <fieldset>
+          <legend>Reader defaults</legend>
+          <label>Playback speed <input id="playback-speed" type="number" min="0.5" max="2" step="0.25"></label>
+          <label>Chunk limit (UTF-8 bytes) <input id="chunk-limit" type="number" min="100" max="10000"></label>
+          <label>Minimum hover length <input id="hover-length" type="number" min="10" max="1000"></label>
+          <label class="check"><input id="skip-code" type="checkbox"> Skip code by default</label>
+          <label class="check"><input id="normalize-dsa" type="checkbox"> Normalize DSA notation by default</label>
+        </fieldset>
+        <button type="submit">Save options</button>
+      </form>
+      <p id="backend-status">Backend status: not checked.</p>
+      <p id="status" role="status" aria-live="polite" aria-atomic="true">Ready.</p>
+    </main>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>
