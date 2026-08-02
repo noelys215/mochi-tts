@@ -10,9 +10,9 @@ Scope: documentation-only verification. No Fish Audio request was made.
 | --- | --- |
 | Node.js | `v22.14.0` (meets Node 20+ requirement) |
 | npm | `11.6.2` |
-| Git | `2.39.5`; repository was not initialized at inspection time |
+| Git | `2.39.5`; repository initialized |
 | Chrome | Google Chrome `151.0.7922.72` at `/Applications/Google Chrome.app` |
-| Playwright package | Not installed locally or globally; no `package.json` exists yet |
+| Playwright package | `1.62.1` installed as a development dependency |
 | Context7 | Available and successfully queried |
 | Playwright MCP | Available (browser tools are registered) |
 
@@ -90,6 +90,10 @@ Chrome Extensions:
 6. **Testing:** use Node's test runner for validation, byte/pricing math, reducers, and backend mock behavior. Install Playwright later only for essential extension workflows against fixture pages and a mock backend; never call Fish from automated tests.
 
 Target Chrome 116+ initially so offscreen-document discovery can use `runtime.getContexts()` without a legacy fallback. Reconsider only if broader browser support becomes a requirement.
+
+## Implemented contract
+
+The current implementation follows the verified contracts above: a mock-by-default Express adapter, explicit real-provider configuration, MV3 service-worker coordination, one offscreen audio document, loopback-only extension hosts, local usage/budget accounting, bounded chunk generation, and no retained study text in history. These notes document external facts; operational instructions live in the README and focused architecture, security, and troubleshooting documents.
 
 ## Reverification gates
 
