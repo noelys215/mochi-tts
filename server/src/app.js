@@ -48,7 +48,11 @@ export function createApp(options = {}) {
     const origin = request.get("origin");
     response.vary("Origin");
 
-    if (origin && isAllowedOrigin(origin, extensionOrigin)) {
+    if (origin && !isAllowedOrigin(origin, extensionOrigin)) {
+      return sendError(response, 403, "ORIGIN_NOT_ALLOWED", "Origin is not allowed.");
+    }
+
+    if (origin) {
       response.set("Access-Control-Allow-Origin", origin);
       response.set("Access-Control-Allow-Headers", "Content-Type");
       response.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -59,9 +63,6 @@ export function createApp(options = {}) {
     }
 
     if (request.method === "OPTIONS") {
-      if (!isAllowedOrigin(origin, extensionOrigin)) {
-        return sendError(response, 403, "ORIGIN_NOT_ALLOWED", "Origin is not allowed.");
-      }
       return response.sendStatus(204);
     }
     return next();

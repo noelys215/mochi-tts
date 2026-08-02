@@ -125,6 +125,27 @@ test("TTS endpoint returns configured provider audio and usage", async () => {
   });
 });
 
+test("rejects disallowed origins before provider generation", async () => {
+  let calls = 0;
+  const ttsProvider = {
+    mode: "mock", model: "mock", pricePerMillionBytes: 0,
+    async synthesize() { calls += 1; throw new Error("must not run"); },
+  };
+  await withServer({
+    extensionOrigin: "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    ttsProvider,
+  }, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/tts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: "https://malicious.example" },
+      body: JSON.stringify({ text: "Do not generate.", requestId: "origin_request_123" }),
+    });
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).error.code, "ORIGIN_NOT_ALLOWED");
+    assert.equal(calls, 0);
+  });
+});
+
 test("TTS endpoint maps provider failures to sanitized errors", async () => {
   const ttsProvider = {
     mode: "fish",

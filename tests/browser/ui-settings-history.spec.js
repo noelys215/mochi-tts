@@ -78,6 +78,14 @@ test("popup exposes labeled status and keyboard focus", async () => {
 
 test("history lists metadata, excludes text, exports, and resets with confirmation", async () => {
   const page = await extensionPage("history/history.html");
+  await page.evaluate(() => chrome.runtime.sendMessage({ type: "USAGE_RESET" }));
+  const failed = await page.evaluate(() => chrome.runtime.sendMessage({
+    type: "SELECTION_READ_REQUEST",
+    payload: { text: "", requestId: "failed_history_123" },
+  }));
+  expect(failed.ok).toBe(false);
+  const afterFailure = await page.evaluate(() => chrome.runtime.sendMessage({ type: "USAGE_STATE_REQUEST" }));
+  expect(afterFailure.state.records).toHaveLength(0);
   await page.evaluate(() => chrome.runtime.sendMessage({
     type: "USAGE_SETTINGS_UPDATE",
     payload: { pricingMode: "free", backendUrl: "http://127.0.0.1:3000" },
