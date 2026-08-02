@@ -51,6 +51,10 @@
 .mochi-audio-passage-button[aria-busy="true"] { cursor: wait; opacity: .75; }
 .mochi-audio-passage-button[data-state="active"] { background: var(--mochi-active); }
 .mochi-audio-passage-button[data-state="error"] { border-color: #b42318; color: #b42318; }
+.mochi-audio-hover-target-active {
+  outline: 2px solid rgb(63 111 52 / 62%) !important;
+  outline-offset: 3px !important;
+}
 
 #mochi-audio-in-page-overlay .mochi-audio-confirmation {
   all: initial;

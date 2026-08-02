@@ -3,8 +3,7 @@ import { speechText } from "../shared/dsa-normalizer.js";
 
 const readButton = document.querySelector("#read-selection");
 const articleButton = document.querySelector("#read-article");
-const hoverToggle = document.querySelector("#hover-toggle");
-const inPageToggle = document.querySelector("#in-page-toggle");
+const passageHoverToggle = document.querySelector("#passage-hover-toggle");
 const articlePreview = document.querySelector("#article-preview");
 const articleSpeech = document.querySelector("#article-speech");
 const playbackToggle = document.querySelector("#playback-toggle");
@@ -13,8 +12,7 @@ const playbackRate = document.querySelector("#playback-rate");
 const status = document.querySelector("#status");
 const budgetWarning = document.querySelector("#budget-warning");
 const HOVER_MINIMUM_LENGTH = 40;
-let hoverEnabled = false;
-let inPageEnabled = false;
+let passageHoverEnabled = false;
 let appSettings;
 let articleOriginalText = "";
 let articleTabId = null;
@@ -22,6 +20,7 @@ let estimateTimer;
 let playbackState = {
   status: "idle", requestId: null, currentTime: 0, duration: 0, playbackRate: 1,
 };
+let playbackView = { session: { ownsPlayback: false, otherTabActive: false }, playback: playbackState };
 
 function formatUsage(value) {
   return `${value.inputBytes.toLocaleString()} bytes · $${(value.estimatedCostMicrousd / 1_000_000).toFixed(2)}`;
@@ -53,9 +52,16 @@ function setStatus(message, kind = "info") {
   budgetWarning.hidden = !/monthly spending limit reached/i.test(message);
 }
 
-function renderPlayback(next) {
-  if (!next) return;
+function renderPlayback(view) {
+  if (!view) return;
+  const next = view.playback || view;
+  playbackView = view.playback ? view : { session: { ownsPlayback: true, otherTabActive: false }, playback: next };
   playbackState = next;
+  const otherTabActive = playbackView.session?.otherTabActive === true;
+  document.querySelector("#playback-owner-controls").hidden = otherTabActive;
+  document.querySelector("#other-playback-status").hidden = !otherTabActive;
+  document.querySelector("#stop-other-playback").hidden = !otherTabActive;
+  if (otherTabActive) setStatus("Audio is playing in another tab.");
   const duration = Number.isFinite(next.duration) ? next.duration : 0;
   const currentTime = Math.min(Number.isFinite(next.currentTime) ? next.currentTime : 0, duration || Infinity);
   const playing = next.status === "playing";
@@ -107,7 +113,7 @@ async function extractSelection(tabId) {
 async function extractArticle(tabId, codeMode) {
   try {
     await chrome.scripting.executeScript({
-      target: { tabId }, files: ["content/article-extractor.js"],
+      target: { tabId }, files: ["content/article-extractor.js", "content/content-region.js"],
     });
     const results = await chrome.scripting.executeScript({
       target: { tabId },
@@ -141,54 +147,33 @@ async function refreshArticleExtraction() {
   await updateArticleEstimate();
 }
 
-function updateHoverControl(enabled) {
-  hoverEnabled = enabled;
-  hoverToggle.setAttribute("aria-pressed", String(enabled));
-  hoverToggle.textContent = `Hover mode: ${enabled ? "On" : "Off"}`;
-}
-
-function updateInPageControl(enabled) {
-  inPageEnabled = enabled;
-  inPageToggle.setAttribute("aria-pressed", String(enabled));
-  inPageToggle.textContent = `Passage controls: ${enabled ? "On" : "Off"}`;
+function updatePassageHoverControl(enabled) {
+  passageHoverEnabled = enabled;
+  passageHoverToggle.setAttribute("aria-pressed", String(enabled));
+  passageHoverToggle.textContent = `Passage hover controls: ${enabled ? "On" : "Off"}`;
 }
 
 async function sendTabMessage(tabId, message) {
   return chrome.tabs.sendMessage(tabId, { target: "content", ...message });
 }
 
-async function injectHoverReader(tabId) {
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    files: ["content/article-extractor.js", "content/hover-target.js", "content/hover-reader.js"],
-  });
-}
-
-async function injectInPageControls(tabId) {
+async function injectPassageHoverControls(tabId) {
   await chrome.scripting.insertCSS({ target: { tabId }, files: ["content/in-page-controls.css"] });
   await chrome.scripting.executeScript({
     target: { tabId },
     files: [
-      "content/article-extractor.js", "content/in-page-targets.js",
+      "content/article-extractor.js", "content/content-region.js", "content/in-page-targets.js",
       "content/in-page-player-state.js", "content/in-page-controls.js",
     ],
   });
 }
 
-async function refreshHoverStatus() {
+async function refreshPassageHoverStatus() {
   try {
     const tab = await getActiveTab();
-    const response = await sendTabMessage(tab.id, { type: MESSAGE_TYPES.HOVER_MODE_STATUS_REQUEST });
-    updateHoverControl(Boolean(response?.enabled));
-  } catch { updateHoverControl(false); }
-}
-
-async function refreshInPageStatus() {
-  try {
-    const tab = await getActiveTab();
-    const response = await sendTabMessage(tab.id, { type: MESSAGE_TYPES.IN_PAGE_CONTROLS_STATUS_REQUEST });
-    updateInPageControl(Boolean(response?.enabled));
-  } catch { updateInPageControl(false); }
+    const response = await sendTabMessage(tab.id, { type: MESSAGE_TYPES.PASSAGE_HOVER_CONTROLS_STATUS_REQUEST });
+    updatePassageHoverControl(Boolean(response?.enabled));
+  } catch { updatePassageHoverControl(false); }
 }
 
 async function sendPlayback(type, payload, { silent = false } = {}) {
@@ -268,56 +253,33 @@ document.querySelector("#confirm-article").addEventListener("click", async () =>
   } finally { button.disabled = false; }
 });
 
-hoverToggle.addEventListener("click", async () => {
-  hoverToggle.disabled = true;
+passageHoverToggle.addEventListener("click", async () => {
+  passageHoverToggle.disabled = true;
   try {
     const tab = await getActiveTab();
-    if (hoverEnabled) {
-      await sendTabMessage(tab.id, { type: MESSAGE_TYPES.HOVER_MODE_DISABLE });
-      updateHoverControl(false);
-      setStatus("Hover mode disabled.");
-    } else {
-      await injectHoverReader(tab.id);
-      await sendTabMessage(tab.id, {
-        type: MESSAGE_TYPES.HOVER_MODE_ENABLE,
-        payload: { minimumLength: appSettings?.minimumHoverLength || HOVER_MINIMUM_LENGTH },
-      });
-      updateHoverControl(true);
-      setStatus("Hover mode enabled.");
-    }
-  } catch {
-    updateHoverControl(false);
-    setStatus("This page does not allow hover reading.", "error");
-  } finally { hoverToggle.disabled = false; }
-});
-
-inPageToggle.addEventListener("click", async () => {
-  inPageToggle.disabled = true;
-  try {
-    const tab = await getActiveTab();
-    if (inPageEnabled) {
-      await sendTabMessage(tab.id, { type: MESSAGE_TYPES.IN_PAGE_CONTROLS_DISABLE });
+    if (passageHoverEnabled) {
+      await sendTabMessage(tab.id, { type: MESSAGE_TYPES.PASSAGE_HOVER_CONTROLS_DISABLE });
       await chrome.scripting.removeCSS({
         target: { tabId: tab.id }, files: ["content/in-page-controls.css"],
       }).catch(() => {});
-      updateInPageControl(false);
-      setStatus("Passage controls disabled. Audio continues until stopped.");
+      updatePassageHoverControl(false);
+      setStatus("Passage hover controls disabled. Audio continues until stopped.");
     } else {
-      await injectInPageControls(tab.id);
+      await injectPassageHoverControls(tab.id);
       await sendTabMessage(tab.id, {
-        type: MESSAGE_TYPES.IN_PAGE_CONTROLS_ENABLE,
+        type: MESSAGE_TYPES.PASSAGE_HOVER_CONTROLS_ENABLE,
         payload: {
           minimumLength: appSettings?.minimumHoverLength || HOVER_MINIMUM_LENGTH,
           skipCode: appSettings?.skipCode !== false,
         },
       });
-      updateInPageControl(true);
-      setStatus("Passage controls enabled on this tab.");
+      updatePassageHoverControl(true);
+      setStatus("Passage hover controls enabled on this tab.");
     }
   } catch {
-    updateInPageControl(false);
-    setStatus("This page does not allow passage controls.", "error");
-  } finally { inPageToggle.disabled = false; }
+    updatePassageHoverControl(false);
+    setStatus("This page does not allow passage hover controls.", "error");
+  } finally { passageHoverToggle.disabled = false; }
 });
 
 playbackToggle.addEventListener("click", () => {
@@ -331,6 +293,13 @@ playbackToggle.addEventListener("click", () => {
 
 document.querySelector("#playback-stop").addEventListener("click", () =>
   sendPlayback(MESSAGE_TYPES.PLAYBACK_STOP));
+
+document.querySelector("#stop-other-playback").addEventListener("click", async () => {
+  const response = await chrome.runtime.sendMessage({ type: MESSAGE_TYPES.PLAYBACK_SESSION_STOP });
+  setStatus(response?.ok ? "Other playback stopped." : response?.error || "Playback could not be stopped.",
+    response?.ok ? "info" : "error");
+  await refreshPlayback();
+});
 
 document.querySelectorAll("[data-queue]").forEach((button) => {
   button.addEventListener("click", async () => {
@@ -360,13 +329,20 @@ document.querySelector("#override-once").addEventListener("click", async () => {
     response?.ok ? "info" : "error");
 });
 
-chrome.runtime.onMessage.addListener((message) => {
-  if (message?.type === MESSAGE_TYPES.PLAYBACK_STATE_CHANGED) renderPlayback(message.payload);
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (message?.type === MESSAGE_TYPES.TAB_PLAYBACK_STATE_CHANGED ||
+      message?.type === MESSAGE_TYPES.PLAYBACK_STATE_CHANGED) refreshPlayback().catch(() => {});
+  if (message?.type === MESSAGE_TYPES.PASSAGE_HOVER_CONTROLS_STATUS_CHANGED && sender.tab?.id) {
+    getActiveTab().then((tab) => {
+      if (tab.id === sender.tab.id) updatePassageHoverControl(message.payload?.enabled === true);
+    }).catch(() => {});
+  }
   return false;
 });
 
-refreshHoverStatus();
-refreshInPageStatus();
+globalThis.__mochiAudioPopupRefreshPlayback = refreshPlayback;
+
+refreshPassageHoverStatus();
 refreshPlayback().catch(() => {});
 refreshUsage().catch(() => {});
 refreshAppState().catch(() => setStatus("Backend unavailable.", "error"));

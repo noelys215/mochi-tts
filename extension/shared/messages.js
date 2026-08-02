@@ -1,17 +1,15 @@
 export const MESSAGE_TYPES = Object.freeze({
   SELECTION_READ_REQUEST: "SELECTION_READ_REQUEST",
-  HOVER_MODE_ENABLE: "HOVER_MODE_ENABLE",
-  HOVER_MODE_DISABLE: "HOVER_MODE_DISABLE",
-  HOVER_MODE_STATUS_REQUEST: "HOVER_MODE_STATUS_REQUEST",
-  HOVER_PASSAGE_READ: "HOVER_PASSAGE_READ",
-  IN_PAGE_CONTROLS_ENABLE: "IN_PAGE_CONTROLS_ENABLE",
-  IN_PAGE_CONTROLS_DISABLE: "IN_PAGE_CONTROLS_DISABLE",
-  IN_PAGE_CONTROLS_STATUS_REQUEST: "IN_PAGE_CONTROLS_STATUS_REQUEST",
-  IN_PAGE_CONTROLS_STATUS_CHANGED: "IN_PAGE_CONTROLS_STATUS_CHANGED",
-  IN_PAGE_PASSAGE_READ: "IN_PAGE_PASSAGE_READ",
-  IN_PAGE_ARTICLE_READ: "IN_PAGE_ARTICLE_READ",
-  IN_PAGE_PLAYER_STATE_REQUEST: "IN_PAGE_PLAYER_STATE_REQUEST",
-  IN_PAGE_PLAYER_STATE_CHANGED: "IN_PAGE_PLAYER_STATE_CHANGED",
+  PASSAGE_HOVER_CONTROLS_ENABLE: "PASSAGE_HOVER_CONTROLS_ENABLE",
+  PASSAGE_HOVER_CONTROLS_DISABLE: "PASSAGE_HOVER_CONTROLS_DISABLE",
+  PASSAGE_HOVER_CONTROLS_STATUS_REQUEST: "PASSAGE_HOVER_CONTROLS_STATUS_REQUEST",
+  PASSAGE_HOVER_CONTROLS_STATUS_CHANGED: "PASSAGE_HOVER_CONTROLS_STATUS_CHANGED",
+  PASSAGE_HOVER_READ: "PASSAGE_HOVER_READ",
+  PAGE_HOVER_READ: "PAGE_HOVER_READ",
+  PRIMARY_CONTENT_REGION_CHANGED: "PRIMARY_CONTENT_REGION_CHANGED",
+  TAB_PLAYBACK_STATE_REQUEST: "TAB_PLAYBACK_STATE_REQUEST",
+  TAB_PLAYBACK_STATE_CHANGED: "TAB_PLAYBACK_STATE_CHANGED",
+  PLAYBACK_SESSION_STOP: "PLAYBACK_SESSION_STOP",
   ARTICLE_READ_REQUEST: "ARTICLE_READ_REQUEST",
   ARTICLE_PREVIEW_ESTIMATE_REQUEST: "ARTICLE_PREVIEW_ESTIMATE_REQUEST",
   PLAYBACK_LOAD: "PLAYBACK_LOAD",
@@ -24,11 +22,8 @@ export const MESSAGE_TYPES = Object.freeze({
   PLAYBACK_STATE_REQUEST: "PLAYBACK_STATE_REQUEST",
   PLAYBACK_STATE_CHANGED: "PLAYBACK_STATE_CHANGED",
   PLAYBACK_ENDED: "PLAYBACK_ENDED",
-  QUEUE_STATE_REQUEST: "QUEUE_STATE_REQUEST",
   QUEUE_NEXT: "QUEUE_NEXT",
   QUEUE_PREVIOUS: "QUEUE_PREVIOUS",
-  QUEUE_STOP: "QUEUE_STOP",
-  QUEUE_CLEAR: "QUEUE_CLEAR",
   USAGE_STATE_REQUEST: "USAGE_STATE_REQUEST",
   USAGE_SETTINGS_UPDATE: "USAGE_SETTINGS_UPDATE",
   USAGE_EXPORT_REQUEST: "USAGE_EXPORT_REQUEST",
@@ -68,21 +63,17 @@ export function validateSelectionReadMessage(message) {
   return validateReadMessage(message, MESSAGE_TYPES.SELECTION_READ_REQUEST);
 }
 
-export function validateHoverPassageReadMessage(message) {
-  return validateReadMessage(message, MESSAGE_TYPES.HOVER_PASSAGE_READ);
-}
-
 export function validateArticleReadMessage(message) {
   return validateReadMessage(message, MESSAGE_TYPES.ARTICLE_READ_REQUEST);
 }
 
-const IN_PAGE_SOURCES = new Set(["passage", "article"]);
+const IN_PAGE_SOURCES = new Set(["hover-passage", "page"]);
 const IN_PAGE_ELEMENTS = new Set(["p", "li", "blockquote", "article", "section", "div", "main", "body"]);
 
 export function validateInPageReadMessage(message) {
-  const expectedType = message?.type === MESSAGE_TYPES.IN_PAGE_ARTICLE_READ
-    ? MESSAGE_TYPES.IN_PAGE_ARTICLE_READ
-    : MESSAGE_TYPES.IN_PAGE_PASSAGE_READ;
+  const expectedType = message?.type === MESSAGE_TYPES.PAGE_HOVER_READ
+    ? MESSAGE_TYPES.PAGE_HOVER_READ
+    : MESSAGE_TYPES.PASSAGE_HOVER_READ;
   const error = validateReadMessage(message, expectedType);
   if (error) return error;
   if (!IN_PAGE_SOURCES.has(message.payload.source)) return "Invalid in-page source type.";
@@ -93,6 +84,25 @@ export function validateInPageReadMessage(message) {
   } catch {
     return "Invalid page URL.";
   }
+  if (typeof message.payload.regionId !== "string" ||
+      !/^[A-Za-z0-9_-]{8,128}$/.test(message.payload.regionId)) return "Invalid content region ID.";
+  return null;
+}
+
+export function validateRegionChangedMessage(message) {
+  if (!message || message.type !== MESSAGE_TYPES.PRIMARY_CONTENT_REGION_CHANGED ||
+      !message.payload || typeof message.payload !== "object") return "Invalid content-region message.";
+  try {
+    const url = new URL(message.payload.pageUrl);
+    if (!/^https?:$/.test(url.protocol)) return "Invalid page URL.";
+  } catch { return "Invalid page URL."; }
+  if (message.payload.regionId !== null && (typeof message.payload.regionId !== "string" ||
+      !/^[A-Za-z0-9_-]{8,128}$/.test(message.payload.regionId))) return "Invalid content region ID.";
+  const region = message.payload.region;
+  if (region !== null && (!region || typeof region !== "object" ||
+      !["semantic-article", "semantic-main", "site-adapter", "prose-fallback"].includes(region.strategy) ||
+      !Number.isFinite(region.confidence) || region.confidence < 0 || region.confidence > 1 ||
+      typeof region.title !== "string" || region.title.length > 300)) return "Invalid content-region metadata.";
   return null;
 }
 

@@ -3,8 +3,8 @@
 
   const IGNORED_SELECTOR = [
     "nav", "header", "footer", "aside", "form", "button", "input", "textarea",
-    "select", "option", "pre", "code", "script", "style", "[hidden]",
-    "[aria-hidden=\"true\"]", "[role=\"navigation\"]", "[role=\"complementary\"]",
+    "select", "option", "pre", ".codehilite", "script", "style", "iframe", "video",
+    "audio", "canvas", "[hidden]", "[role=\"navigation\"]", "[role=\"complementary\"]",
     "[data-mochi-audio-ui]",
   ].join(",");
   const INTERACTIVE_SELECTOR = "a,button,input,textarea,select,option,[role=button],[contenteditable=true]";
@@ -14,7 +14,9 @@
   }
 
   function isIgnored(element) {
-    return Boolean(element?.closest?.(IGNORED_SELECTOR));
+    if (element?.closest?.(IGNORED_SELECTOR)) return true;
+    const hidden = element?.closest?.('[aria-hidden="true"]');
+    return Boolean(hidden && !hidden.closest?.(".katex"));
   }
 
   function isVisible(element) {
@@ -77,27 +79,22 @@
     return directReadableText(element).length >= minimumLength;
   }
 
-  function selectPassageTargets(root, minimumLength = 40, codeMode = "skip") {
-    const scope = root?.querySelectorAll ? root : root?.documentElement;
-    if (!scope) return [];
-    const candidates = [
-      ...(scope.matches?.("p,li,blockquote,section,div") ? [scope] : []),
-      ...scope.querySelectorAll("p,li,blockquote,section,div"),
-    ];
-    const selected = candidates.filter((element) => qualifiesParagraph(element, minimumLength, codeMode));
-    for (const element of candidates.filter((candidate) =>
-      qualifiesSecondaryBlock(candidate, minimumLength, codeMode))) {
-      if (!selected.some((chosen) => element.contains(chosen))) selected.push(element);
+  function findPassageTarget(start, minimumLength = 40, codeMode = "skip", region = null) {
+    if (!start?.closest || isIgnored(start)) return null;
+    const within = (element) => element && (!region || region.contains(element));
+    const paragraph = start.closest("p");
+    if (within(paragraph) && qualifiesParagraph(paragraph, minimumLength, codeMode)) return paragraph;
+    for (const selector of ["li", "blockquote"]) {
+      const candidate = start.closest(selector);
+      if (within(candidate) && qualifiesSecondaryBlock(candidate, minimumLength, codeMode)) return candidate;
     }
-    const containers = candidates
-      .filter((element) => qualifiesContainer(element, minimumLength, codeMode))
-      .sort((a, b) => b.querySelectorAll("*").length - a.querySelectorAll("*").length);
-    for (const element of containers) {
-      if (selected.some((chosen) => element.contains(chosen))) continue;
-      if (containers.some((child) => child !== element && element.contains(child) && qualifiesContainer(child, minimumLength, codeMode))) continue;
-      selected.push(element);
+    for (let candidate = start.closest("div,section"); candidate && within(candidate);
+      candidate = candidate.parentElement?.closest?.("div,section")) {
+      if (qualifiesContainer(candidate, minimumLength, codeMode)) return candidate;
+      if (candidate === region) break;
     }
-    return [...new Set(selected)];
+    const semantic = start.closest("article,main");
+    return within(semantic) && isProse(semantic, minimumLength, codeMode) ? semantic : null;
   }
 
   function overlayPosition(rect, controlWidth, controlHeight, viewportWidth, viewportHeight, offset = 6) {
@@ -115,22 +112,22 @@
   }
 
   function findPageTarget(documentObject = document, minimumLength = 40, codeMode = "skip") {
-    const extractor = globalThis.__mochiAudioArticleExtractor;
-    const suitable = (element) => element && isVisible(element) &&
-      readableText(element, codeMode).length >= minimumLength;
-    const articles = [...documentObject.querySelectorAll("article")]
-      .filter(suitable)
-      .sort((a, b) => readableText(b, codeMode).length - readableText(a, codeMode).length);
-    if (articles[0]) return articles[0];
-    const main = documentObject.querySelector("main");
-    if (suitable(main)) return main;
-    const fallback = extractor?.findRoot(documentObject);
-    return suitable(fallback) ? fallback : null;
+    const resolved = globalThis.__mochiAudioContentRegion
+      ?.resolvePrimaryContentRegion(documentObject, documentObject.location || globalThis.location);
+    return resolved && readableText(resolved.element, codeMode).length >= minimumLength ? resolved : null;
+  }
+
+  function isPageTrigger(start, region, pointerY) {
+    if (!start || !region?.element) return false;
+    if (region.titleElement?.contains?.(start) || start.closest?.("h1,h2,h3") === region.titleElement) return true;
+    if (!region.element.contains(start)) return false;
+    const rect = region.element.getBoundingClientRect?.();
+    return Boolean(rect && Number.isFinite(pointerY) && pointerY <= rect.top + Math.min(140, rect.height * 0.25));
   }
 
   globalThis.__mochiAudioInPageTargets = Object.freeze({
-    connectedTargets, directReadableText, findPageTarget, isIgnored, isVisible,
+    connectedTargets, directReadableText, findPageTarget, findPassageTarget, isIgnored, isPageTrigger, isVisible,
     normalizeText, overlayPosition, qualifiesContainer, qualifiesParagraph,
-    qualifiesSecondaryBlock, readableText, selectPassageTargets,
+    qualifiesSecondaryBlock, readableText,
   });
 })();

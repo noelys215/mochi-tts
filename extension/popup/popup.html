@@ -29,8 +29,7 @@
       <section aria-labelledby="page-controls-heading">
         <h2 id="page-controls-heading">Page controls</h2>
         <div class="toggle-list">
-          <button id="hover-toggle" type="button" aria-pressed="false">Hover mode: Off</button>
-          <button id="in-page-toggle" type="button" aria-pressed="false">Passage controls: Off</button>
+          <button id="passage-hover-toggle" type="button" aria-pressed="false">Passage hover controls: Off</button>
         </div>
       </section>
 
@@ -48,6 +47,9 @@
 
       <section aria-labelledby="playback-heading">
         <h2 id="playback-heading">Playback</h2>
+        <p id="other-playback-status" class="fine-print" hidden>Audio is playing in another tab.</p>
+        <button id="stop-other-playback" type="button" hidden>Stop other playback</button>
+        <div id="playback-owner-controls">
         <div class="transport-controls">
           <button type="button" data-queue="QUEUE_PREVIOUS" aria-label="Previous chunk">Previous</button>
           <button id="playback-toggle" type="button" aria-label="Play">Play</button>
@@ -66,6 +68,7 @@
               <option value="2">2×</option>
             </select>
           </label>
+        </div>
         </div>
       </section>
 
