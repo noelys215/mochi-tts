@@ -17,6 +17,7 @@ export async function requestAudio({
   requestId,
   backendUrl = DEFAULT_BACKEND_URL,
   fetchImpl = fetch,
+  signal,
 }) {
   let response;
   try {
@@ -24,6 +25,7 @@ export async function requestAudio({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, requestId }),
+      signal,
     });
   } catch {
     throw new Error("The local speech server is unavailable.");
@@ -46,6 +48,25 @@ export async function requestAudio({
         response.headers.get("x-estimated-cost-microusd"),
       ),
       pricingMode: response.headers.get("x-pricing-mode"),
+      model: response.headers.get("x-model") || "unknown",
     },
   };
+}
+
+export async function requestBackendMetadata({
+  backendUrl = DEFAULT_BACKEND_URL,
+  fetchImpl = fetch,
+} = {}) {
+  let response;
+  try {
+    response = await fetchImpl(`${backendUrl}/api/health`);
+  } catch {
+    throw new Error("The local speech server is unavailable.");
+  }
+  if (!response.ok) throw new Error("The local speech server is unavailable.");
+  const value = await response.json();
+  if (!Number.isInteger(value.maxInputBytes) || value.maxInputBytes < 4) {
+    throw new Error("The local speech server returned invalid configuration.");
+  }
+  return value;
 }

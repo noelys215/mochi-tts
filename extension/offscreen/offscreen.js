@@ -3,6 +3,10 @@ import { MESSAGE_TYPES } from "../shared/messages.js";
 const player = document.querySelector("#player");
 let requestId = null;
 
+player.addEventListener("ended", () => {
+  chrome.runtime.sendMessage({ type: MESSAGE_TYPES.PLAYBACK_ENDED }).catch(() => {});
+});
+
 function isValidRequestId(value) {
   return typeof value === "string" && /^[A-Za-z0-9_-]{8,128}$/.test(value);
 }

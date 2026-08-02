@@ -17,10 +17,13 @@
       <section aria-labelledby="playback-heading">
         <h2 id="playback-heading">Playback</h2>
         <div class="transport-controls">
+          <button type="button" data-queue="QUEUE_PREVIOUS">Previous</button>
+          <button type="button" data-queue="QUEUE_NEXT">Next</button>
           <button type="button" data-playback="PLAYBACK_PLAY">Play</button>
           <button type="button" data-playback="PLAYBACK_PAUSE">Pause</button>
           <button type="button" data-playback="PLAYBACK_RESUME">Resume</button>
           <button type="button" data-playback="PLAYBACK_STOP">Stop</button>
+          <button type="button" data-queue="QUEUE_CLEAR">Clear</button>
           <button type="button" data-seek="-10">−10s</button>
           <button type="button" data-seek="10">+10s</button>
           <label>
@@ -33,6 +36,43 @@
               <option value="2">2×</option>
             </select>
           </label>
+        </div>
+      </section>
+      <section aria-labelledby="usage-heading">
+        <h2 id="usage-heading">Usage estimates</h2>
+        <dl id="usage-summary">
+          <div><dt>Current</dt><dd id="usage-current">—</dd></div>
+          <div><dt>Today</dt><dd id="usage-today">0 bytes · $0.000000</dd></div>
+          <div><dt>This month</dt><dd id="usage-month">0 bytes · $0.000000</dd></div>
+        </dl>
+        <p class="fine-print">Local estimates only. Not an invoice.</p>
+        <div class="utility-controls">
+          <button id="export-usage" type="button">Export JSON</button>
+          <button id="reset-usage" type="button">Reset usage</button>
+        </div>
+      </section>
+      <section aria-labelledby="budget-heading">
+        <h2 id="budget-heading">Spending safeguards</h2>
+        <label>Pricing mode
+          <select id="pricing-mode">
+            <option value="free">Free</option>
+            <option value="paid">Paid server estimate</option>
+            <option value="custom">Custom estimate</option>
+          </select>
+        </label>
+        <label>Custom price / million bytes (USD)
+          <input id="custom-price" type="number" min="0" step="0.000001">
+        </label>
+        <label>Monthly limit (USD)
+          <input id="monthly-limit" type="number" min="0" step="0.01">
+        </label>
+        <label>Warning threshold (%)
+          <input id="warning-threshold" type="number" min="1" max="100">
+        </label>
+        <label class="checkbox"><input id="hard-stop" type="checkbox"> Hard stop at limit</label>
+        <div class="utility-controls">
+          <button id="save-budget" type="button">Save</button>
+          <button id="override-once" type="button">Allow once</button>
         </div>
       </section>
       <p id="status" role="status" aria-live="polite">Ready.</p>

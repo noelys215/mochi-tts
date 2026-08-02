@@ -7,6 +7,29 @@ const status = document.querySelector("#status");
 const HOVER_MINIMUM_LENGTH = 40;
 let hoverEnabled = false;
 
+function formatUsage(value) {
+  return `${value.inputBytes.toLocaleString()} bytes · $${(value.estimatedCostMicrousd / 1_000_000).toFixed(6)}`;
+}
+
+function renderUsage(state) {
+  document.querySelector("#usage-current").textContent = state.aggregates.current
+    ? formatUsage(state.aggregates.current)
+    : "—";
+  document.querySelector("#usage-today").textContent = formatUsage(state.aggregates.today);
+  document.querySelector("#usage-month").textContent = formatUsage(state.aggregates.month);
+  const settings = state.settings;
+  document.querySelector("#pricing-mode").value = settings.pricingMode;
+  document.querySelector("#custom-price").value = settings.customPricePerMillionBytes;
+  document.querySelector("#monthly-limit").value = settings.monthlyLimitMicrousd / 1_000_000;
+  document.querySelector("#warning-threshold").value = settings.warningThresholdPercent;
+  document.querySelector("#hard-stop").checked = settings.hardStop;
+}
+
+async function refreshUsage() {
+  const response = await chrome.runtime.sendMessage({ type: MESSAGE_TYPES.USAGE_STATE_REQUEST });
+  if (response?.ok) renderUsage(response.state);
+}
+
 function setStatus(message) {
   status.textContent = message;
 }
@@ -100,7 +123,10 @@ readButton.addEventListener("click", async () => {
     if (!response?.ok) {
       throw new Error(response?.error || "The selection could not be read.");
     }
-    setStatus("Playing selection.");
+    setStatus(response.usage.warning
+      ? "Playing selection. Monthly usage is above your warning threshold."
+      : "Playing selection.");
+    await refreshUsage();
   } catch (error) {
     setStatus(error.message || "The selection could not be read.");
   } finally {
@@ -137,6 +163,52 @@ document.querySelectorAll("[data-playback]").forEach((button) => {
   button.addEventListener("click", () => sendPlayback(button.dataset.playback));
 });
 
+document.querySelectorAll("[data-queue]").forEach((button) => {
+  button.addEventListener("click", async () => {
+    const response = await chrome.runtime.sendMessage({ type: button.dataset.queue });
+    setStatus(response?.ok ? "Queue updated." : response?.error || "Queue is unavailable.");
+  });
+});
+
+document.querySelector("#save-budget").addEventListener("click", async () => {
+  const response = await chrome.runtime.sendMessage({
+    type: MESSAGE_TYPES.USAGE_SETTINGS_UPDATE,
+    payload: {
+      pricingMode: document.querySelector("#pricing-mode").value,
+      customPricePerMillionBytes: Number(document.querySelector("#custom-price").value),
+      monthlyLimitMicrousd: Math.round(Number(document.querySelector("#monthly-limit").value) * 1_000_000),
+      warningThresholdPercent: Number(document.querySelector("#warning-threshold").value),
+      hardStop: document.querySelector("#hard-stop").checked,
+    },
+  });
+  if (response?.ok) renderUsage(response.state);
+  setStatus(response?.ok ? "Spending safeguards saved." : "Could not save safeguards.");
+});
+
+document.querySelector("#override-once").addEventListener("click", async () => {
+  const response = await chrome.runtime.sendMessage({ type: MESSAGE_TYPES.BUDGET_OVERRIDE_ONCE });
+  setStatus(response?.ok ? "One generation may exceed the limit." : "Override unavailable.");
+});
+
+document.querySelector("#export-usage").addEventListener("click", async () => {
+  const response = await chrome.runtime.sendMessage({ type: MESSAGE_TYPES.USAGE_EXPORT_REQUEST });
+  if (!response?.ok) return setStatus("Usage export failed.");
+  const url = URL.createObjectURL(new Blob([JSON.stringify(response.data, null, 2)], { type: "application/json" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "fish-study-reader-usage.json";
+  link.click();
+  URL.revokeObjectURL(url);
+  setStatus("Usage exported.");
+});
+
+document.querySelector("#reset-usage").addEventListener("click", async () => {
+  if (!window.confirm("Reset all local usage history?")) return;
+  const response = await chrome.runtime.sendMessage({ type: MESSAGE_TYPES.USAGE_RESET });
+  if (response?.ok) renderUsage(response.state);
+  setStatus(response?.ok ? "Usage reset." : "Usage reset failed.");
+});
+
 document.querySelectorAll("[data-seek]").forEach((button) => {
   button.addEventListener("click", () =>
     sendPlayback(MESSAGE_TYPES.PLAYBACK_SEEK, {
@@ -153,3 +225,4 @@ playbackRate.addEventListener("change", () => {
 
 refreshHoverStatus();
 sendPlayback(MESSAGE_TYPES.PLAYBACK_STATE_REQUEST, undefined, { silent: true });
+refreshUsage().catch(() => {});

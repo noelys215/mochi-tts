@@ -68,12 +68,12 @@ test("unpacked extension reads selected fixture text through mock audio", async 
     const oversizedResult = await extensionPage.evaluate(() =>
       chrome.runtime.sendMessage({
         type: "SELECTION_READ_REQUEST",
-        payload: { text: "🐟".repeat(2_501), requestId: "browser_large_123" },
+        payload: { text: "🐟".repeat(125_001), requestId: "browser_large_123" },
       }),
     );
     expect(oversizedResult).toEqual({
       ok: false,
-      error: "Text exceeds the 10000-byte limit.",
+      error: "Text exceeds the 500000-byte limit.",
     });
 
     const result = await extensionPage.evaluate(async (text) => {
@@ -90,6 +90,8 @@ test("unpacked extension reads selected fixture text through mock audio", async 
         inputBytes: Buffer.byteLength(selectedText),
         estimatedCostMicrousd: 0,
         pricingMode: "mock",
+        model: "mock",
+        warning: false,
       },
     });
     const offscreenContexts = await serviceWorker.evaluate(() =>
