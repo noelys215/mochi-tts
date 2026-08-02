@@ -41,6 +41,8 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
 });
 
+chrome.tabs.onRemoved.addListener((tabId) => inPageTabs.delete(tabId));
+
 async function storageState() {
   const value = await chrome.storage.local.get([
     USAGE_STORAGE_KEYS.records,
@@ -284,6 +286,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ ok: false, error: error || "Invalid in-page source type." });
       return false;
     }
+    inPageTabs.add(sender.tab.id);
     storageState().then(({ settings }) => readAndPlay({
       ...message.payload,
       text: speechText(message.payload.text, settings.dsaNormalization),

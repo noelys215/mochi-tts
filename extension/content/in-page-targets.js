@@ -40,7 +40,7 @@
     while (walker.nextNode()) {
       const parent = walker.currentNode.parentElement;
       if (!parent || isIgnored(parent) || !isVisible(parent)) continue;
-      const block = parent.closest?.("p,article,section,div");
+      const block = parent.closest?.("p,li,blockquote,article,main,section,div");
       if (block && block !== element) continue;
       values.push(walker.currentNode.nodeValue);
     }
@@ -65,6 +65,10 @@
     return Boolean(element?.matches?.("p") && isProse(element, minimumLength, codeMode));
   }
 
+  function qualifiesSecondaryBlock(element, minimumLength, codeMode = "skip") {
+    return Boolean(element?.matches?.("li,blockquote") && isProse(element, minimumLength, codeMode));
+  }
+
   function qualifiesContainer(element, minimumLength, codeMode = "skip") {
     if (!element?.matches?.("section,div") || !isProse(element, minimumLength, codeMode)) return false;
     if ([...element.querySelectorAll("p")].some((child) => qualifiesParagraph(child, minimumLength, codeMode))) {
@@ -77,10 +81,14 @@
     const scope = root?.querySelectorAll ? root : root?.documentElement;
     if (!scope) return [];
     const candidates = [
-      ...(scope.matches?.("p,section,div,article") ? [scope] : []),
-      ...scope.querySelectorAll("p,section,div,article"),
+      ...(scope.matches?.("p,li,blockquote,section,div") ? [scope] : []),
+      ...scope.querySelectorAll("p,li,blockquote,section,div"),
     ];
     const selected = candidates.filter((element) => qualifiesParagraph(element, minimumLength, codeMode));
+    for (const element of candidates.filter((candidate) =>
+      qualifiesSecondaryBlock(candidate, minimumLength, codeMode))) {
+      if (!selected.some((chosen) => element.contains(chosen))) selected.push(element);
+    }
     const containers = candidates
       .filter((element) => qualifiesContainer(element, minimumLength, codeMode))
       .sort((a, b) => b.querySelectorAll("*").length - a.querySelectorAll("*").length);
@@ -89,12 +97,21 @@
       if (containers.some((child) => child !== element && element.contains(child) && qualifiesContainer(child, minimumLength, codeMode))) continue;
       selected.push(element);
     }
-    for (const article of candidates.filter((element) => element.matches?.("article"))) {
-      if (isProse(article, minimumLength, codeMode) && !selected.some((chosen) => article.contains(chosen))) {
-        selected.push(article);
-      }
-    }
     return [...new Set(selected)];
+  }
+
+  function overlayPosition(rect, controlWidth, controlHeight, viewportWidth, viewportHeight, offset = 6) {
+    if (!rect || rect.width <= 0 || rect.height <= 0 || rect.bottom < 0 || rect.top > viewportHeight) {
+      return null;
+    }
+    return {
+      left: Math.max(8, Math.min(viewportWidth - controlWidth - 8, rect.right - controlWidth)),
+      top: Math.max(8, Math.min(viewportHeight - controlHeight - 8, rect.top + offset)),
+    };
+  }
+
+  function connectedTargets(values) {
+    return [...values].filter((element) => element?.isConnected);
   }
 
   function findPageTarget(documentObject = document, minimumLength = 40, codeMode = "skip") {
@@ -112,7 +129,8 @@
   }
 
   globalThis.__mochiAudioInPageTargets = Object.freeze({
-    directReadableText, findPageTarget, isIgnored, isVisible, normalizeText,
-    qualifiesContainer, qualifiesParagraph, readableText, selectPassageTargets,
+    connectedTargets, directReadableText, findPageTarget, isIgnored, isVisible,
+    normalizeText, overlayPosition, qualifiesContainer, qualifiesParagraph,
+    qualifiesSecondaryBlock, readableText, selectPassageTargets,
   });
 })();

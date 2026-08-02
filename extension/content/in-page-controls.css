@@ -1,4 +1,4 @@
-[data-mochi-audio-ui="in-page-overlay"] {
+#mochi-audio-in-page-overlay {
   all: initial;
   --mochi-bg: #fff8e7;
   --mochi-surface: #fffdf7;
@@ -7,20 +7,27 @@
   --mochi-primary: #3f6f34;
   --mochi-focus: #9b3154;
   --mochi-active: #ffdae4;
-  position: absolute;
-  inset: 0;
-  width: 0;
-  height: 0;
-  z-index: 2147482000;
-  pointer-events: none;
+  position: fixed !important;
+  inset: 0 !important;
+  display: block !important;
+  width: auto !important;
+  height: auto !important;
+  overflow: visible !important;
+  z-index: 2147482000 !important;
+  pointer-events: none !important;
+  contain: layout style !important;
 }
 
-.mochi-audio-passage-button,
-.mochi-audio-page-button {
+#mochi-audio-in-page-overlay .mochi-audio-passage-button,
+#mochi-audio-in-page-overlay .mochi-audio-page-button {
   all: initial;
   box-sizing: border-box;
-  position: absolute;
-  pointer-events: auto;
+  position: absolute !important;
+  display: inline-flex !important;
+  visibility: visible !important;
+  align-items: center !important;
+  justify-content: center !important;
+  pointer-events: auto !important;
   border: 1px solid var(--mochi-border);
   border-radius: 999px;
   background: var(--mochi-surface);
@@ -32,8 +39,9 @@
   white-space: nowrap;
 }
 
-.mochi-audio-passage-button { padding: 5px 8px; color: var(--mochi-primary); }
-.mochi-audio-page-button { display: flex; align-items: center; gap: 5px; }
+#mochi-audio-in-page-overlay .mochi-audio-passage-button { width: 32px !important; height: 32px !important; padding: 0 !important; color: var(--mochi-primary); }
+#mochi-audio-in-page-overlay .mochi-audio-page-button { height: 34px !important; gap: 5px; }
+#mochi-audio-in-page-overlay button[hidden] { display: none !important; }
 .mochi-audio-page-button img { width: 18px; height: 18px; }
 .mochi-audio-passage-button:focus-visible,
 .mochi-audio-page-button:focus-visible {
@@ -68,5 +76,5 @@
 .mochi-audio-confirmation button { margin: 8px 8px 0 0; padding: 7px 12px; }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-mochi-audio-ui="in-page-overlay"] * { scroll-behavior: auto !important; transition: none !important; }
+  #mochi-audio-in-page-overlay * { scroll-behavior: auto !important; transition: none !important; }
 }

@@ -77,7 +77,7 @@ export function validateArticleReadMessage(message) {
 }
 
 const IN_PAGE_SOURCES = new Set(["passage", "article"]);
-const IN_PAGE_ELEMENTS = new Set(["p", "article", "section", "div", "main"]);
+const IN_PAGE_ELEMENTS = new Set(["p", "li", "blockquote", "article", "section", "div", "main", "body"]);
 
 export function validateInPageReadMessage(message) {
   const expectedType = message?.type === MESSAGE_TYPES.IN_PAGE_ARTICLE_READ

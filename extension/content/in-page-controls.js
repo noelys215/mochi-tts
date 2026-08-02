@@ -27,6 +27,7 @@
     pendingRoots: new Set(),
     playerState: null,
     hiddenRequestId: null,
+    activeButton: null,
   };
 
   const send = (message) => chrome.runtime.sendMessage(message);
@@ -44,8 +45,9 @@
   }
 
   function createOverlay() {
-    document.querySelectorAll('[data-mochi-audio-ui="in-page-overlay"]').forEach((node) => node.remove());
+    document.querySelectorAll('#mochi-audio-in-page-overlay,[data-mochi-audio-ui="in-page-overlay"]').forEach((node) => node.remove());
     const overlay = document.createElement("div");
+    overlay.id = "mochi-audio-in-page-overlay";
     overlay.dataset.mochiAudioUi = "in-page-overlay";
     overlay.addEventListener("click", onOverlayClick);
     document.documentElement.append(overlay);
@@ -99,22 +101,38 @@
 
   function positionButton(button, element, offset = 6) {
     const rect = element?.getBoundingClientRect?.();
-    if (!rect || rect.width <= 0 || rect.height <= 0 || rect.bottom < 0 || rect.top > innerHeight) {
+    button.hidden = false;
+    const position = targets().overlayPosition(
+      rect,
+      button.offsetWidth || 32,
+      button.offsetHeight || 32,
+      innerWidth,
+      innerHeight,
+      offset,
+    );
+    if (!position) {
       button.hidden = true;
       return;
     }
-    button.hidden = false;
-    const width = button.offsetWidth || 32;
-    const left = Math.max(8, Math.min(scrollX + innerWidth - width - 8, scrollX + rect.right - width));
-    const top = Math.max(scrollY + 8, scrollY + rect.top + offset);
-    button.style.left = `${left}px`;
-    button.style.top = `${top}px`;
+    button.style.left = `${position.left}px`;
+    button.style.top = `${position.top}px`;
   }
 
   function positionAll() {
     state.positionFrame = 0;
-    for (const [element, button] of state.buttons) positionButton(button, element);
     if (state.pageButton) positionButton(state.pageButton, state.pageRoot, 10);
+    for (const [element, button] of state.buttons) {
+      positionButton(button, element);
+      if (button.hidden || !state.pageButton || state.pageButton.hidden ||
+          !state.pageRoot?.contains?.(element)) continue;
+      const passageRect = button.getBoundingClientRect();
+      const pageRect = state.pageButton.getBoundingClientRect();
+      const overlaps = passageRect.left < pageRect.right && passageRect.right > pageRect.left &&
+        passageRect.top < pageRect.bottom && passageRect.bottom > pageRect.top;
+      if (overlaps) {
+        button.style.top = `${Math.min(innerHeight - passageRect.height - 8, pageRect.bottom + 6)}px`;
+      }
+    }
   }
 
   function schedulePosition() {
@@ -122,6 +140,7 @@
   }
 
   function scheduleScan(root) {
+    if (root?.closest?.("[data-mochi-audio-ui]")) return;
     const candidate = root?.nodeType === Node.ELEMENT_NODE
       ? root.closest?.("p,article,section,div,main") || root
       : root?.parentElement;
@@ -151,16 +170,19 @@
     if (!text) return setPassageState(button, "error", "No readable prose found");
     state.buttons.forEach((control) => setPassageState(control, "idle"));
     setPassageState(button, "loading", "Generating passage audio");
+    const requestId = crypto.randomUUID();
     const response = await send({
       type: TYPES.passageRead,
       payload: {
         text,
-        requestId: crypto.randomUUID(),
+        requestId,
         source: "passage",
         elementType: element.tagName.toLowerCase(),
         pageUrl: location.href,
       },
     }).catch((error) => ({ ok: false, error: error.message }));
+    state.activeButton = response?.ok ? button : null;
+    button.dataset.requestId = requestId;
     setPassageState(button, response?.ok ? "active" : "error",
       response?.ok ? "Current passage" : response?.error || "Passage could not be read");
   }
@@ -285,6 +307,12 @@
     state.playerState = shared;
     const view = globalThis.__mochiAudioInPagePlayerState.map(shared);
     const { playback } = view;
+    if (state.activeButton &&
+        (playback.status === "idle" || playback.status === "ended" ||
+         playback.requestId !== state.activeButton.dataset.requestId)) {
+      setPassageState(state.activeButton, "idle");
+      state.activeButton = null;
+    }
     if (!view.visible) {
       state.playerHost?.remove();
       state.playerHost = null;
@@ -345,8 +373,10 @@
       childList: true, subtree: true, attributes: true,
       attributeFilter: ["hidden", "aria-hidden", "style", "class"],
     });
-    addEventListener("scroll", schedulePosition, { passive: true });
+    document.addEventListener("scroll", schedulePosition, { passive: true, capture: true });
     addEventListener("resize", schedulePosition, { passive: true });
+    document.fonts?.addEventListener?.("loadingdone", schedulePosition);
+    document.fonts?.ready?.then(() => state.enabled && schedulePosition());
     addEventListener("popstate", onNavigation);
     addEventListener("hashchange", onNavigation);
     send({ type: TYPES.statusChanged, payload: { enabled: true, pageUrl: location.href } }).catch(() => {});
@@ -363,8 +393,9 @@
     state.observer = null;
     clearTimeout(state.scanTimer);
     if (state.positionFrame) cancelAnimationFrame(state.positionFrame);
-    removeEventListener("scroll", schedulePosition);
+    document.removeEventListener("scroll", schedulePosition, { capture: true });
     removeEventListener("resize", schedulePosition);
+    document.fonts?.removeEventListener?.("loadingdone", schedulePosition);
     removeEventListener("popstate", onNavigation);
     removeEventListener("hashchange", onNavigation);
     state.overlay?.remove();
@@ -372,6 +403,7 @@
     state.overlay = state.playerHost = state.pageButton = state.pageRoot = null;
     for (const element of state.buttons.keys()) delete element.dataset.mochiAudioInPageTarget;
     state.buttons.clear();
+    state.activeButton = null;
     state.pendingRoots.clear();
     if (notify) send({ type: TYPES.statusChanged, payload: { enabled: false, pageUrl: location.href } }).catch(() => {});
   }
