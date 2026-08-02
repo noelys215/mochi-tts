@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
-  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mochi Audio History</title><link rel="stylesheet" href="history.css"></head>
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mochi Audio History</title><link rel="icon" type="image/png" href="../assets/mochi.png"><link rel="stylesheet" href="../shared/theme.css"><link rel="stylesheet" href="history.css"></head>
   <body><main>
-    <h1>Local usage history</h1>
+    <header class="brand"><img src="../assets/mochi.png" alt="" width="72" height="72"><div><h1>Local usage history</h1><p>Mochi Audio keeps generation metadata on this device.</p></div></header>
     <p>Successful generation metadata stored on this device. Study text is never retained here.</p>
     <div class="actions"><button id="export" type="button">Export JSON</button><button id="reset" type="button">Reset history</button></div>
     <div class="table-wrap"><table><thead><tr><th scope="col">Time</th><th scope="col">Source</th><th scope="col">Bytes</th><th scope="col">Estimate</th><th scope="col">Model</th><th scope="col">Status</th></tr></thead><tbody id="history-body"></tbody></table></div>

@@ -1,5 +1,12 @@
 [data-mochi-audio-ui="in-page-overlay"] {
   all: initial;
+  --mochi-bg: #fff8e7;
+  --mochi-surface: #fffdf7;
+  --mochi-border: #9a7c3e;
+  --mochi-text: #444a50;
+  --mochi-primary: #3f6f34;
+  --mochi-focus: #9b3154;
+  --mochi-active: #ffdae4;
   position: absolute;
   inset: 0;
   width: 0;
@@ -14,25 +21,27 @@
   box-sizing: border-box;
   position: absolute;
   pointer-events: auto;
-  border: 1px solid #d7c5a6;
+  border: 1px solid var(--mochi-border);
   border-radius: 999px;
-  background: #fffaf0;
-  color: #493721;
+  background: var(--mochi-surface);
+  color: var(--mochi-text);
   box-shadow: 0 2px 10px rgb(32 24 16 / 18%);
   cursor: pointer;
-  font: 600 12px/1.2 system-ui, sans-serif;
+  font: 650 12px/1.2 ui-rounded, system-ui, sans-serif;
   padding: 6px 9px;
   white-space: nowrap;
 }
 
-.mochi-audio-passage-button { padding: 5px 8px; }
+.mochi-audio-passage-button { padding: 5px 8px; color: var(--mochi-primary); }
+.mochi-audio-page-button { display: flex; align-items: center; gap: 5px; }
+.mochi-audio-page-button img { width: 18px; height: 18px; }
 .mochi-audio-passage-button:focus-visible,
 .mochi-audio-page-button:focus-visible {
-  outline: 3px solid #2672ec;
+  outline: 3px solid var(--mochi-focus);
   outline-offset: 2px;
 }
 .mochi-audio-passage-button[aria-busy="true"] { cursor: wait; opacity: .75; }
-.mochi-audio-passage-button[data-state="active"] { background: #f2d7a6; }
+.mochi-audio-passage-button[data-state="active"] { background: var(--mochi-active); }
 .mochi-audio-passage-button[data-state="error"] { border-color: #b42318; color: #b42318; }
 
 .mochi-audio-confirmation {
@@ -46,12 +55,12 @@
   max-height: calc(100vh - 48px);
   overflow: auto;
   pointer-events: auto;
-  border: 1px solid #d7c5a6;
+  border: 1px solid var(--mochi-border);
   border-radius: 16px;
-  background: #fffaf0;
-  color: #302719;
+  background: var(--mochi-bg);
+  color: var(--mochi-text);
   box-shadow: 0 18px 60px rgb(0 0 0 / 28%);
-  font: 14px/1.45 system-ui, sans-serif;
+  font: 14px/1.45 ui-rounded, system-ui, sans-serif;
   padding: 18px;
 }
 .mochi-audio-confirmation h2 { margin: 0 0 10px; font: 700 20px/1.2 system-ui, sans-serif; }

@@ -15,13 +15,29 @@
     "http://127.0.0.1/*",
     "http://localhost/*"
   ],
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/mochi.png"],
+      "matches": ["http://*/*", "https://*/*"]
+    }
+  ],
   "background": {
     "service_worker": "background/service-worker.js",
     "type": "module"
   },
+  "icons": {
+    "16": "assets/mochi.png",
+    "32": "assets/mochi.png",
+    "48": "assets/mochi.png",
+    "128": "assets/mochi.png"
+  },
   "action": {
     "default_title": "Mochi Audio",
-    "default_popup": "popup/popup.html"
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "assets/mochi.png",
+      "32": "assets/mochi.png"
+    }
   },
   "options_page": "options/options.html"
 }

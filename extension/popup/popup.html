@@ -4,11 +4,16 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Mochi Audio</title>
+    <link rel="icon" type="image/png" href="../assets/mochi.png" />
+    <link rel="stylesheet" href="../shared/theme.css" />
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
     <main>
-      <h1>Mochi Audio</h1>
+      <header class="brand">
+        <img src="../assets/mochi.png" alt="" width="56" height="56" />
+        <div><h1>Mochi Audio</h1><span>Your cozy page reader</span></div>
+      </header>
       <p>Select text on the page, then read it through your local speech server.</p>
       <section class="dashboard" aria-label="Reader status">
         <div><span>Source</span><strong id="source-status">None</strong></div>

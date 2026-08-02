@@ -88,7 +88,10 @@
     state.pageRoot = root;
     if (!root) return;
     const button = makeButton("Read this page", "mochi-audio-page-button");
-    button.textContent = "Read this page";
+    const logo = document.createElement("img");
+    logo.src = chrome.runtime.getURL("assets/mochi.png");
+    logo.alt = "";
+    button.append(logo, document.createTextNode("Read this page"));
     button.dataset.action = "page";
     state.overlay.append(button);
     state.pageButton = button;
@@ -230,13 +233,15 @@
     host.dataset.mochiAudioUi = "in-page-player";
     host.style.cssText = "position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:2147482000;";
     const shadow = host.attachShadow({ mode: "open" });
+    const logoUrl = chrome.runtime.getURL("assets/mochi.png");
     shadow.innerHTML = `
       <style>
-        :host{all:initial} .bar{box-sizing:border-box;display:flex;align-items:center;gap:7px;width:min(760px,calc(100vw - 24px));padding:9px 12px;border:1px solid #d7c5a6;border-radius:16px;background:#fffaf0;color:#302719;box-shadow:0 8px 30px #0003;font:13px/1.2 system-ui,sans-serif}
-        button,select,input{font:inherit} button{min-width:34px;min-height:34px;border:1px solid #d7c5a6;border-radius:8px;background:white;cursor:pointer} button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid #2672ec;outline-offset:2px}.progress{flex:1;min-width:90px}.time,.queue{white-space:nowrap}.status{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+        :host{all:initial}.bar{box-sizing:border-box;display:flex;align-items:center;gap:7px;width:min(760px,calc(100vw - 24px));padding:9px 12px;border:1px solid #9a7c3e;border-radius:16px;background:#fff8e7;color:#444a50;box-shadow:0 8px 30px #444a5033;font:13px/1.2 ui-rounded,system-ui,sans-serif}.logo{width:32px;height:32px;filter:drop-shadow(0 3px 5px #444a5024)}
+        button,select,input{font:inherit}button{min-width:34px;min-height:34px;border:1px solid #9a7c3e;border-radius:8px;background:#fffdf7;color:#3f6f34;cursor:pointer}button:hover{background:#fff1f5}button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid #9b3154;outline-offset:2px}.progress{flex:1;min-width:90px;accent-color:#3f6f34}.time,.queue{white-space:nowrap}.status{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
         @media(max-width:620px){.optional{display:none}.bar{flex-wrap:wrap}.progress{min-width:45vw}} @media(prefers-reduced-motion:reduce){*{transition:none!important}}
       </style>
       <div class="bar" role="region" aria-label="Mochi Audio playback controls">
+        <img class="logo optional" src="${logoUrl}" alt="">
         <button data-command="QUEUE_PREVIOUS" aria-label="Previous chunk">⏮</button>
         <button data-command="PLAYBACK_PLAY" aria-label="Play">▶</button>
         <button data-command="PLAYBACK_PAUSE" aria-label="Pause">❚❚</button>
