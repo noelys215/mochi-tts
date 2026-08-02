@@ -1,0 +1,63 @@
+[data-mochi-audio-ui="in-page-overlay"] {
+  all: initial;
+  position: absolute;
+  inset: 0;
+  width: 0;
+  height: 0;
+  z-index: 2147482000;
+  pointer-events: none;
+}
+
+.mochi-audio-passage-button,
+.mochi-audio-page-button {
+  all: initial;
+  box-sizing: border-box;
+  position: absolute;
+  pointer-events: auto;
+  border: 1px solid #d7c5a6;
+  border-radius: 999px;
+  background: #fffaf0;
+  color: #493721;
+  box-shadow: 0 2px 10px rgb(32 24 16 / 18%);
+  cursor: pointer;
+  font: 600 12px/1.2 system-ui, sans-serif;
+  padding: 6px 9px;
+  white-space: nowrap;
+}
+
+.mochi-audio-passage-button { padding: 5px 8px; }
+.mochi-audio-passage-button:focus-visible,
+.mochi-audio-page-button:focus-visible {
+  outline: 3px solid #2672ec;
+  outline-offset: 2px;
+}
+.mochi-audio-passage-button[aria-busy="true"] { cursor: wait; opacity: .75; }
+.mochi-audio-passage-button[data-state="active"] { background: #f2d7a6; }
+.mochi-audio-passage-button[data-state="error"] { border-color: #b42318; color: #b42318; }
+
+.mochi-audio-confirmation {
+  all: initial;
+  box-sizing: border-box;
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  pointer-events: auto;
+  border: 1px solid #d7c5a6;
+  border-radius: 16px;
+  background: #fffaf0;
+  color: #302719;
+  box-shadow: 0 18px 60px rgb(0 0 0 / 28%);
+  font: 14px/1.45 system-ui, sans-serif;
+  padding: 18px;
+}
+.mochi-audio-confirmation h2 { margin: 0 0 10px; font: 700 20px/1.2 system-ui, sans-serif; }
+.mochi-audio-confirmation textarea { box-sizing: border-box; width: 100%; min-height: 180px; margin: 8px 0; }
+.mochi-audio-confirmation button { margin: 8px 8px 0 0; padding: 7px 12px; }
+
+@media (prefers-reduced-motion: reduce) {
+  [data-mochi-audio-ui="in-page-overlay"] * { scroll-behavior: auto !important; transition: none !important; }
+}

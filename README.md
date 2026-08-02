@@ -38,6 +38,7 @@ Load the extension:
 - Selection: select page text and choose **Read selection**, or use the selection context menu.
 - Hover: enable hover mode, point at an eligible paragraph or article, then use the page control. Articles require confirmation.
 - Article: choose **Read article**, edit the extracted preview, optionally normalize DSA notation or change code handling, then confirm.
+- In-page controls: choose **Enable on this tab** to add passage actions, **Read this page**, and a synchronized playback bar. Multi-chunk playback reports queue position; seeking is limited to the current chunk.
 - Playback: use play, pause, seek, speed, next, previous, stop, and clear controls. Playback continues after the popup closes.
 - Estimates: the popup shows current, daily, and monthly local estimates. They are not an invoice. Configure safeguards through **All options**.
 - History: open **Full history** to inspect metadata, export JSON, or reset after confirmation. Study text is not stored in history.

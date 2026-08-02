@@ -15,6 +15,7 @@
         <div><span>Preview</span><strong id="preview-status">No text loaded</strong></div>
         <div><span>Queue</span><strong id="queue-status">Empty</strong></div>
         <div><span>Hover</span><strong id="hover-status">Off</strong></div>
+        <div><span>In-page</span><strong id="in-page-status">Off</strong></div>
         <div><span>Backend</span><strong id="backend-status">Checking…</strong></div>
         <div><span>Budget</span><strong id="budget-status">Free mode</strong></div>
       </section>
@@ -23,6 +24,13 @@
       <button id="hover-toggle" type="button" aria-pressed="false">
         Enable hover mode
       </button>
+      <section aria-labelledby="in-page-heading">
+        <h2 id="in-page-heading">In-page controls</h2>
+        <button id="in-page-toggle" type="button" aria-pressed="false">
+          Enable on this tab
+        </button>
+        <p class="fine-print">Adds passage, page-reading, and playback controls to this tab only.</p>
+      </section>
       <section id="article-preview" aria-labelledby="article-heading" hidden>
         <h2 id="article-heading">Article preview</h2>
         <label>Code handling

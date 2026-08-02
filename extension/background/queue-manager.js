@@ -1,6 +1,6 @@
 import { chunkText } from "../shared/chunking.js";
 
-export function createQueueManager({ generate, play, stop }) {
+export function createQueueManager({ generate, play, stop, onStateChange = () => {} }) {
   let entries = [];
   let currentIndex = -1;
   const pending = new Map();
@@ -18,16 +18,19 @@ export function createQueueManager({ generate, play, stop }) {
     if (pending.has(index)) return pending.get(index);
     const controller = new AbortController();
     entry.status = "generating";
+    onStateChange(state());
     const promise = generate(entry, controller.signal)
       .then((result) => {
         entry.audioUrl = result.audioUrl;
         entry.usage = result.usage;
         entry.status = "ready";
+        onStateChange(state());
         return entry;
       })
       .catch((error) => {
         entry.status = controller.signal.aborted ? "cancelled" : "failed";
         entry.error = error.message;
+        onStateChange(state());
         throw error;
       })
       .finally(() => pending.delete(index));
@@ -43,6 +46,7 @@ export function createQueueManager({ generate, play, stop }) {
     currentIndex = index;
     entry.status = "playing";
     await play(entry);
+    onStateChange(state());
     if (index + 1 < entries.length && !entries[index + 1].audioUrl) {
       ensureReady(index + 1).catch(() => {});
     }
@@ -57,6 +61,7 @@ export function createQueueManager({ generate, play, stop }) {
     await stop();
     entries = [];
     currentIndex = -1;
+    onStateChange(state());
     return state();
   }
 
@@ -70,6 +75,7 @@ export function createQueueManager({ generate, play, stop }) {
         source,
         status: "pending",
       }));
+      onStateChange(state());
       const entry = await playIndex(0);
       return { usage: entry.usage, state: state() };
     },
@@ -84,6 +90,7 @@ export function createQueueManager({ generate, play, stop }) {
     async stop() {
       await stop();
       if (entries[currentIndex]?.status === "playing") entries[currentIndex].status = "ready";
+      onStateChange(state());
       return state();
     },
     clear,

@@ -2,10 +2,14 @@ import { createQueueManager } from "./queue-manager.js";
 import { requestAudio, requestBackendMetadata } from "../shared/backend-client.js";
 import { evaluateBudget, priceForMode } from "../shared/budget.js";
 import { chunkText } from "../shared/chunking.js";
+import { speechText } from "../shared/dsa-normalizer.js";
 import {
   MESSAGE_TYPES,
   validateArticleReadMessage,
   validateHoverPassageReadMessage,
+  validateInPageReadMessage,
+  validatePlaybackCommand,
+  validatePlaybackState,
   validateSelectionReadMessage,
 } from "../shared/messages.js";
 import {
@@ -23,6 +27,10 @@ const CONTEXT_MENU_ID = "read-with-mochi-audio";
 const OFFSCREEN_PATH = "offscreen/offscreen.html";
 let creatingOffscreenDocument;
 let usageMutation = Promise.resolve();
+const inPageTabs = new Set();
+let latestPlayback = {
+  status: "idle", requestId: null, currentTime: 0, duration: 0, playbackRate: 1,
+};
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => chrome.contextMenus.create({
@@ -118,10 +126,41 @@ async function sendPlayback(type, payload) {
   await ensureOffscreenDocument();
   const response = await chrome.runtime.sendMessage({ target: "offscreen", type, payload });
   if (!response?.ok) throw new Error(response?.error || "Audio playback failed.");
+  if (response.state) latestPlayback = response.state;
   return response;
 }
 
+function sharedPlayerState() {
+  return { playback: latestPlayback, queue: queue.state() };
+}
+
+async function restorePlaybackState() {
+  const url = chrome.runtime.getURL(OFFSCREEN_PATH);
+  const existing = await chrome.runtime.getContexts({
+    contextTypes: ["OFFSCREEN_DOCUMENT"], documentUrls: [url],
+  });
+  if (existing.length) {
+    const response = await chrome.runtime.sendMessage({
+      target: "offscreen", type: MESSAGE_TYPES.PLAYBACK_STATE_REQUEST,
+    });
+    if (response?.ok) latestPlayback = response.state;
+  }
+  return sharedPlayerState();
+}
+
+function broadcastPlayerState() {
+  const payload = sharedPlayerState();
+  for (const tabId of inPageTabs) {
+    chrome.tabs.sendMessage(tabId, {
+      target: "content",
+      type: MESSAGE_TYPES.IN_PAGE_PLAYER_STATE_CHANGED,
+      payload,
+    }).catch(() => inPageTabs.delete(tabId));
+  }
+}
+
 const queue = createQueueManager({
+  onStateChange: broadcastPlayerState,
   async generate(entry, signal) {
     const local = await storageState();
     const backend = await requestBackendMetadata({ backendUrl: local.settings.backendUrl });
@@ -176,6 +215,16 @@ async function readAndPlay(payload, source) {
   });
 }
 
+function comparablePageUrl(value) {
+  try {
+    const url = new URL(value);
+    url.hash = "";
+    return url.href;
+  } catch {
+    return null;
+  }
+}
+
 chrome.contextMenus.onClicked.addListener((info) => {
   if (info.menuItemId !== CONTEXT_MENU_ID) return;
   const text = typeof info.selectionText === "string" ? info.selectionText.trim() : "";
@@ -192,6 +241,91 @@ const queueHandlers = {
 };
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === MESSAGE_TYPES.PLAYBACK_STATE_CHANGED) {
+    if (!sender.url?.endsWith(OFFSCREEN_PATH) || validatePlaybackState(message.payload)) return false;
+    latestPlayback = message.payload;
+    broadcastPlayerState();
+    return false;
+  }
+
+  if (message?.type === MESSAGE_TYPES.IN_PAGE_CONTROLS_STATUS_CHANGED) {
+    if (!sender.tab?.id || comparablePageUrl(message.payload?.pageUrl) !== comparablePageUrl(sender.tab.url)) {
+      sendResponse({ ok: false, error: "Invalid in-page controls source." });
+      return false;
+    }
+    if (message.payload.enabled === true) inPageTabs.add(sender.tab.id);
+    else inPageTabs.delete(sender.tab.id);
+    sendResponse({ ok: true, enabled: inPageTabs.has(sender.tab.id) });
+    return false;
+  }
+
+  if (message?.type === MESSAGE_TYPES.IN_PAGE_PLAYER_STATE_REQUEST) {
+    if (!sender.tab?.id) {
+      sendResponse({ ok: false, error: "Invalid player state source." });
+      return false;
+    }
+    inPageTabs.add(sender.tab.id);
+    restorePlaybackState()
+      .then((state) => sendResponse({ ok: true, state }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
+  const isInPageRead = message?.type === MESSAGE_TYPES.IN_PAGE_PASSAGE_READ ||
+    message?.type === MESSAGE_TYPES.IN_PAGE_ARTICLE_READ;
+  if (isInPageRead) {
+    const error = !sender.tab?.id
+      ? "Invalid in-page request source."
+      : validateInPageReadMessage(message) ||
+        (comparablePageUrl(message.payload.pageUrl) !== comparablePageUrl(sender.tab.url)
+          ? "Page URL does not match the sender tab." : null);
+    const expectedSource = message.type === MESSAGE_TYPES.IN_PAGE_ARTICLE_READ ? "article" : "passage";
+    if (error || message.payload?.source !== expectedSource) {
+      sendResponse({ ok: false, error: error || "Invalid in-page source type." });
+      return false;
+    }
+    storageState().then(({ settings }) => readAndPlay({
+      ...message.payload,
+      text: speechText(message.payload.text, settings.dsaNormalization),
+    }, expectedSource === "article" ? "article" : "hover"))
+      .then(({ usage }) => sendResponse({ ok: true, usage }))
+      .catch((failure) => sendResponse({ ok: false, error: failure.message }));
+    return true;
+  }
+
+  const isTrustedPlaybackSurface = Boolean(sender.tab?.id) ||
+    sender.url?.startsWith(chrome.runtime.getURL(""));
+  if (isTrustedPlaybackSurface && !message?.target &&
+      message?.type === MESSAGE_TYPES.PLAYBACK_STATE_REQUEST) {
+    restorePlaybackState()
+      .then((state) => sendResponse({ ok: true, state: state.playback }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+  const isTabPlaybackCommand = isTrustedPlaybackSurface && !message?.target && [
+    MESSAGE_TYPES.PLAYBACK_PLAY,
+    MESSAGE_TYPES.PLAYBACK_PAUSE,
+    MESSAGE_TYPES.PLAYBACK_RESUME,
+    MESSAGE_TYPES.PLAYBACK_STOP,
+    MESSAGE_TYPES.PLAYBACK_SEEK,
+    MESSAGE_TYPES.PLAYBACK_RATE_SET,
+  ].includes(message?.type);
+  if (isTabPlaybackCommand) {
+    const error = validatePlaybackCommand(message);
+    if (error) {
+      sendResponse({ ok: false, error });
+      return false;
+    }
+    const operation = message.type === MESSAGE_TYPES.PLAYBACK_STOP
+      ? queue.stop().then(() => ({ ok: true, state: latestPlayback }))
+      : sendPlayback(message.type, message.payload);
+    operation.then((response) => {
+      broadcastPlayerState();
+      sendResponse(response);
+    }).catch((failure) => sendResponse({ ok: false, error: failure.message }));
+    return true;
+  }
+
   const isSelection = message?.type === MESSAGE_TYPES.SELECTION_READ_REQUEST;
   const isHover = message?.type === MESSAGE_TYPES.HOVER_PASSAGE_READ;
   const isArticle = message?.type === MESSAGE_TYPES.ARTICLE_READ_REQUEST;
@@ -228,6 +362,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const backend = await requestBackendMetadata({ backendUrl: local.settings.backendUrl });
       const inputBytes = byteLength(text);
       const price = priceForMode(local.settings, backend);
+      const decision = evaluateBudget({
+        inputBytes,
+        monthCostMicrousd: aggregateUsage(local.records).month.estimatedCostMicrousd,
+        settings: local.settings,
+        backend,
+      });
       sendResponse({
         ok: true,
         estimate: {
@@ -235,6 +375,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           chunks: chunkText(text, Math.min(backend.maxInputBytes, local.settings.chunkLimit)).length,
           estimatedCostMicrousd: estimateCostMicrousd(inputBytes, price),
           durationSeconds: Math.max(1, Math.round(text.trim().split(/\s+/u).length / 2.5)),
+          allowed: decision.allowed,
+          warning: Boolean(decision.warning),
+          reason: decision.reason || null,
         },
       });
     }).catch((error) => sendResponse({ ok: false, error: error.message }));

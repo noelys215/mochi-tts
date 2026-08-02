@@ -2,6 +2,7 @@ import { MESSAGE_TYPES } from "../shared/messages.js";
 
 const player = document.querySelector("#player");
 let requestId = null;
+let lastProgressBroadcast = 0;
 
 player.addEventListener("ended", () => {
   chrome.runtime.sendMessage({ type: MESSAGE_TYPES.PLAYBACK_ENDED }).catch(() => {});
@@ -31,6 +32,23 @@ function playbackState() {
     playbackRate: player.playbackRate,
   };
 }
+
+function broadcastPlaybackState() {
+  chrome.runtime.sendMessage({
+    type: MESSAGE_TYPES.PLAYBACK_STATE_CHANGED,
+    payload: playbackState(),
+  }).catch(() => {});
+}
+
+["play", "pause", "loadedmetadata", "ratechange", "ended", "emptied"].forEach((eventName) => {
+  player.addEventListener(eventName, broadcastPlaybackState);
+});
+player.addEventListener("timeupdate", () => {
+  const now = performance.now();
+  if (now - lastProgressBroadcast < 250) return;
+  lastProgressBroadcast = now;
+  broadcastPlaybackState();
+});
 
 function releaseSource() {
   const source = player.getAttribute("src");

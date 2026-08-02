@@ -3,6 +3,7 @@ import { speechText } from "../shared/dsa-normalizer.js";
 
 const readButton = document.querySelector("#read-selection");
 const hoverToggle = document.querySelector("#hover-toggle");
+const inPageToggle = document.querySelector("#in-page-toggle");
 const articleButton = document.querySelector("#read-article");
 const articlePreview = document.querySelector("#article-preview");
 const articleSpeech = document.querySelector("#article-speech");
@@ -10,6 +11,7 @@ const playbackRate = document.querySelector("#playback-rate");
 const status = document.querySelector("#status");
 const HOVER_MINIMUM_LENGTH = 40;
 let hoverEnabled = false;
+let inPageEnabled = false;
 let appSettings;
 let articleOriginalText = "";
 let articleTabId = null;
@@ -175,6 +177,13 @@ function updateHoverControl(enabled) {
   document.querySelector("#hover-status").textContent = enabled ? "On" : "Off";
 }
 
+function updateInPageControl(enabled) {
+  inPageEnabled = enabled;
+  inPageToggle.setAttribute("aria-pressed", String(enabled));
+  inPageToggle.textContent = enabled ? "Disable on this tab" : "Enable on this tab";
+  document.querySelector("#in-page-status").textContent = enabled ? "On" : "Off";
+}
+
 async function sendTabMessage(tabId, message) {
   return chrome.tabs.sendMessage(tabId, { target: "content", ...message });
 }
@@ -186,6 +195,19 @@ async function injectHoverReader(tabId) {
       "content/article-extractor.js",
       "content/hover-target.js",
       "content/hover-reader.js",
+    ],
+  });
+}
+
+async function injectInPageControls(tabId) {
+  await chrome.scripting.insertCSS({ target: { tabId }, files: ["content/in-page-controls.css"] });
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    files: [
+      "content/article-extractor.js",
+      "content/in-page-targets.js",
+      "content/in-page-player-state.js",
+      "content/in-page-controls.js",
     ],
   });
 }
@@ -202,10 +224,21 @@ async function refreshHoverStatus() {
   }
 }
 
+async function refreshInPageStatus() {
+  try {
+    const tab = await getActiveTab();
+    const response = await sendTabMessage(tab.id, {
+      type: MESSAGE_TYPES.IN_PAGE_CONTROLS_STATUS_REQUEST,
+    });
+    updateInPageControl(Boolean(response?.enabled));
+  } catch {
+    updateInPageControl(false);
+  }
+}
+
 async function sendPlayback(type, payload, { silent = false } = {}) {
   try {
     const response = await chrome.runtime.sendMessage({
-      target: "offscreen",
       type,
       payload,
     });
@@ -335,6 +368,37 @@ hoverToggle.addEventListener("click", async () => {
   }
 });
 
+inPageToggle.addEventListener("click", async () => {
+  inPageToggle.disabled = true;
+  try {
+    const tab = await getActiveTab();
+    if (inPageEnabled) {
+      await sendTabMessage(tab.id, { type: MESSAGE_TYPES.IN_PAGE_CONTROLS_DISABLE });
+      await chrome.scripting.removeCSS({
+        target: { tabId: tab.id }, files: ["content/in-page-controls.css"],
+      }).catch(() => {});
+      updateInPageControl(false);
+      setStatus("In-page controls disabled. Audio continues until stopped.");
+    } else {
+      await injectInPageControls(tab.id);
+      await sendTabMessage(tab.id, {
+        type: MESSAGE_TYPES.IN_PAGE_CONTROLS_ENABLE,
+        payload: {
+          minimumLength: appSettings?.minimumHoverLength || HOVER_MINIMUM_LENGTH,
+          skipCode: appSettings?.skipCode !== false,
+        },
+      });
+      updateInPageControl(true);
+      setStatus("In-page controls enabled on this tab.");
+    }
+  } catch {
+    updateInPageControl(false);
+    setStatus("This page does not allow in-page controls.", "error");
+  } finally {
+    inPageToggle.disabled = false;
+  }
+});
+
 document.querySelectorAll("[data-playback]").forEach((button) => {
   button.addEventListener("click", () => sendPlayback(button.dataset.playback));
 });
@@ -406,6 +470,7 @@ playbackRate.addEventListener("change", () => {
 });
 
 refreshHoverStatus();
+refreshInPageStatus();
 sendPlayback(MESSAGE_TYPES.PLAYBACK_STATE_REQUEST, undefined, { silent: true });
 refreshUsage().catch(() => {});
 refreshAppState().catch(() => {
