@@ -272,6 +272,12 @@ async function activeTabForExtension(sender) {
   return tab?.id ? tab : null;
 }
 
+async function readingTabForExtension(sender, payload) {
+  const isExtensionPage = sender.url?.startsWith(chrome.runtime.getURL(""));
+  if (isExtensionPage && payload?.tabId) return chrome.tabs.get(payload.tabId);
+  return activeTabForExtension(sender);
+}
+
 async function startOwnedPlayback(payload, sourceType, tab) {
   const existingGeneration = generation.snapshot();
   const continuingConfirmation = existingGeneration.requestId === payload.requestId &&
@@ -430,7 +436,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === MESSAGE_TYPES.GENERATION_CANCEL) {
     const error = validateGenerationCancelMessage(message);
     if (error) return void sendResponse({ ok: false, error });
-    activeTabForExtension(sender).then((tab) => {
+    readingTabForExtension(sender, message.payload).then((tab) => {
       const isExtensionPage = sender.url?.startsWith(chrome.runtime.getURL(""));
       const global = message.payload?.global === true && isExtensionPage;
       if (!tab && !global) throw new Error("Invalid generation cancellation source.");
@@ -452,7 +458,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     .includes(message?.type)) {
     const error = validateGenerationTransitionMessage(message, message.type);
     if (error) return void sendResponse({ ok: false, error });
-    activeTabForExtension(sender).then((tab) => {
+    Promise.resolve().then(async () => {
+      const isExtensionPage = sender.url?.startsWith(chrome.runtime.getURL(""));
+      const tab = isExtensionPage && message.payload.tabId ? await chrome.tabs.get(message.payload.tabId)
+        : sender.tab?.id ? sender.tab
+          : await activeTabForExtension(sender);
       if (!tab) throw new Error("No active page is available.");
       if (message.payload.pageUrl && comparablePageUrl(message.payload.pageUrl) !== comparablePageUrl(tab.url)) {
         throw new Error("Page URL does not match the active tab.");
@@ -554,7 +564,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return false;
     }
     const source = isArticle ? "page" : "selection";
-    activeTabForExtension(sender).then((tab) => {
+    readingTabForExtension(sender, message.payload).then((tab) => {
       if (!tab) throw new Error("No active page is available for playback.");
       return startOwnedPlayback({ ...message.payload, pageUrl: tab.url }, source, tab);
     })

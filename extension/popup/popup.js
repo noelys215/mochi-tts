@@ -213,7 +213,7 @@ readButton.addEventListener("click", async () => {
     setStatus("Generating selection audio…");
     const response = await chrome.runtime.sendMessage({
       type: MESSAGE_TYPES.SELECTION_READ_REQUEST,
-      payload: { text, requestId: crypto.randomUUID() },
+      payload: { text, requestId: crypto.randomUUID(), tabId: tab.id },
     });
     if (!response?.ok) throw new Error(response?.error || "The selection could not be read.");
     setStatus(response.usage.warning ? "Playing selection · budget warning." : "Playing selection.",
@@ -233,13 +233,13 @@ articleButton.addEventListener("click", async () => {
     articleGenerationId = crypto.randomUUID();
     const prepared = await chrome.runtime.sendMessage({
       type: MESSAGE_TYPES.GENERATION_PREPARE_REQUEST,
-      payload: { requestId: articleGenerationId, sourceType: "page", pageUrl: tab.url },
+      payload: { requestId: articleGenerationId, sourceType: "page", pageUrl: tab.url, tabId: tab.id },
     });
     if (!prepared?.ok) throw new Error(prepared?.error || "Another request is already active.");
     await refreshArticleExtraction();
     await chrome.runtime.sendMessage({
       type: MESSAGE_TYPES.GENERATION_AWAIT_CONFIRMATION,
-      payload: { requestId: articleGenerationId, sourceType: "page", pageUrl: tab.url },
+      payload: { requestId: articleGenerationId, sourceType: "page", pageUrl: tab.url, tabId: tab.id },
     });
     articlePreview.hidden = false;
     setStatus("Review the extracted text before reading.");
@@ -289,7 +289,9 @@ document.querySelector("#confirm-article").addEventListener("click", async () =>
   try {
     const response = await chrome.runtime.sendMessage({
       type: MESSAGE_TYPES.ARTICLE_READ_REQUEST,
-      payload: { text: articleSpeech.value, requestId: articleGenerationId || crypto.randomUUID() },
+      payload: {
+        text: articleSpeech.value, requestId: articleGenerationId || crypto.randomUUID(), tabId: articleTabId,
+      },
     });
     if (!response?.ok) throw new Error(response?.error || "The page could not be read.");
     articlePreview.hidden = true;

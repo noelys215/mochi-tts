@@ -29,12 +29,15 @@ test("validates generation cancellation request IDs and global intent", () => {
 test("validates page preparation state transitions", () => {
   const message = {
     type: MESSAGE_TYPES.GENERATION_PREPARE_REQUEST,
-    payload: { requestId: "request_123", sourceType: "page", pageUrl: "https://example.com/lesson" },
+    payload: { requestId: "request_123", sourceType: "page", pageUrl: "https://example.com/lesson", tabId: 7 },
   };
   assert.equal(validateGenerationTransitionMessage(message, message.type), null);
   assert.match(validateGenerationTransitionMessage({
     ...message, payload: { ...message.payload, sourceType: "selection" },
   }, message.type), /source/);
+  assert.match(validateGenerationTransitionMessage({
+    ...message, payload: { ...message.payload, tabId: -1 },
+  }, message.type), /tab ID/);
 });
 
 function passage(overrides = {}) {

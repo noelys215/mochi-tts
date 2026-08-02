@@ -60,6 +60,9 @@ function validateReadMessage(message, expectedType) {
   ) {
     return "Invalid request ID.";
   }
+  if (message.payload.tabId !== undefined && (!Number.isInteger(message.payload.tabId) || message.payload.tabId < 1)) {
+    return "Invalid target tab ID.";
+  }
   return null;
 }
 
@@ -148,6 +151,9 @@ export function validateGenerationTransitionMessage(message, expectedType) {
   if (typeof message.payload.requestId !== "string" ||
       !/^[A-Za-z0-9_-]{8,128}$/.test(message.payload.requestId)) return "Invalid generation request ID.";
   if (!new Set(["page"]).has(message.payload.sourceType)) return "Invalid generation source type.";
+  if (message.payload.tabId !== undefined && (!Number.isInteger(message.payload.tabId) || message.payload.tabId < 1)) {
+    return "Invalid generation tab ID.";
+  }
   if (message.payload.pageUrl !== undefined) {
     try {
       const url = new URL(message.payload.pageUrl);
