@@ -256,11 +256,12 @@ test("playback controls work after the initiating popup closes", async () => {
   await page.locator(hoverButton).click();
   await expect.poll(() => generatedTexts.length).toBe(1);
 
-  await controls.locator('[data-playback="PLAYBACK_PAUSE"]').click();
+  await expect(controls.locator("#playback-toggle")).toHaveText("Pause");
+  await controls.locator("#playback-toggle").click();
   await expect(controls.locator("#status")).toHaveText("Playback: paused.");
   await controls.locator("#playback-rate").selectOption("1.5");
-  await controls.locator('[data-seek="10"]').click();
-  await controls.locator('[data-playback="PLAYBACK_RESUME"]').click();
+  await expect(controls.locator("#playback-toggle")).toHaveText("Resume");
+  await controls.locator("#playback-toggle").click();
   await expect(controls.locator("#status")).toHaveText(/Playback: (playing|ended)\./);
   const resumed = await playbackMessage(controls, "PLAYBACK_STATE_REQUEST");
   expect(resumed.state.playbackRate).toBe(1.5);
@@ -271,6 +272,6 @@ test("playback controls work after the initiating popup closes", async () => {
   const persisted = await playbackMessage(reopened, "PLAYBACK_STATE_REQUEST");
   expect(persisted.state.requestId).toBe(requestId);
   expect(["playing", "ended"]).toContain(persisted.state.status);
-  await reopened.locator('[data-playback="PLAYBACK_STOP"]').click();
+  await reopened.locator("#playback-stop").click();
   await expect(reopened.locator("#status")).toHaveText("Playback: idle.");
 });

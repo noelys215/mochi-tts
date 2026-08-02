@@ -24,6 +24,8 @@
     buttons: new Map(),
     scanTimer: 0,
     positionFrame: 0,
+    navigationTimer: 0,
+    lastUrl: "",
     pendingRoots: new Set(),
     playerState: null,
     hiddenRequestId: null,
@@ -49,6 +51,7 @@
     const overlay = document.createElement("div");
     overlay.id = "mochi-audio-in-page-overlay";
     overlay.dataset.mochiAudioUi = "in-page-overlay";
+    overlay.dataset.pageUrl = location.href;
     overlay.addEventListener("click", onOverlayClick);
     document.documentElement.append(overlay);
     state.overlay = overlay;
@@ -374,17 +377,23 @@
       attributeFilter: ["hidden", "aria-hidden", "style", "class"],
     });
     document.addEventListener("scroll", schedulePosition, { passive: true, capture: true });
+    document.addEventListener("load", schedulePosition, { capture: true });
     addEventListener("resize", schedulePosition, { passive: true });
     document.fonts?.addEventListener?.("loadingdone", schedulePosition);
     document.fonts?.ready?.then(() => state.enabled && schedulePosition());
     addEventListener("popstate", onNavigation);
     addEventListener("hashchange", onNavigation);
+    state.lastUrl = location.href;
+    state.navigationTimer = setInterval(onNavigation, 500);
     send({ type: TYPES.statusChanged, payload: { enabled: true, pageUrl: location.href } }).catch(() => {});
     send({ type: TYPES.playerRequest }).then((response) => response?.ok && renderPlayer(response.state)).catch(() => {});
   }
 
   function onNavigation() {
-    scheduleScan(document.body || document.documentElement);
+    if (!state.enabled || state.lastUrl === location.href) return;
+    state.lastUrl = location.href;
+    if (state.overlay) state.overlay.dataset.pageUrl = location.href;
+    reconcile(document);
   }
 
   function disable(notify = true) {
@@ -392,8 +401,11 @@
     state.observer?.disconnect();
     state.observer = null;
     clearTimeout(state.scanTimer);
+    clearInterval(state.navigationTimer);
+    state.navigationTimer = 0;
     if (state.positionFrame) cancelAnimationFrame(state.positionFrame);
     document.removeEventListener("scroll", schedulePosition, { capture: true });
+    document.removeEventListener("load", schedulePosition, { capture: true });
     removeEventListener("resize", schedulePosition);
     document.fonts?.removeEventListener?.("loadingdone", schedulePosition);
     removeEventListener("popstate", onNavigation);

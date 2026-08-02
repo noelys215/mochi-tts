@@ -52,17 +52,19 @@
 .mochi-audio-passage-button[data-state="active"] { background: var(--mochi-active); }
 .mochi-audio-passage-button[data-state="error"] { border-color: #b42318; color: #b42318; }
 
-.mochi-audio-confirmation {
+#mochi-audio-in-page-overlay .mochi-audio-confirmation {
   all: initial;
   box-sizing: border-box;
-  position: fixed;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: min(560px, calc(100vw - 32px));
-  max-height: calc(100vh - 48px);
-  overflow: auto;
-  pointer-events: auto;
+  position: fixed !important;
+  display: block !important;
+  visibility: visible !important;
+  left: 50% !important;
+  top: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  width: min(560px, calc(100vw - 32px)) !important;
+  max-height: calc(100vh - 48px) !important;
+  overflow: auto !important;
+  pointer-events: auto !important;
   border: 1px solid var(--mochi-border);
   border-radius: 16px;
   background: var(--mochi-bg);
@@ -71,9 +73,11 @@
   font: 14px/1.45 ui-rounded, system-ui, sans-serif;
   padding: 18px;
 }
-.mochi-audio-confirmation h2 { margin: 0 0 10px; font: 700 20px/1.2 system-ui, sans-serif; }
-.mochi-audio-confirmation textarea { box-sizing: border-box; width: 100%; min-height: 180px; margin: 8px 0; }
-.mochi-audio-confirmation button { margin: 8px 8px 0 0; padding: 7px 12px; }
+#mochi-audio-in-page-overlay .mochi-audio-confirmation h2 { display: block !important; margin: 0 0 10px; font: 700 20px/1.2 system-ui, sans-serif; }
+#mochi-audio-in-page-overlay .mochi-audio-confirmation label,
+#mochi-audio-in-page-overlay .mochi-audio-confirmation p { display: block !important; }
+#mochi-audio-in-page-overlay .mochi-audio-confirmation textarea { box-sizing: border-box; display: block !important; visibility: visible !important; width: 100% !important; min-height: 180px; margin: 8px 0; }
+#mochi-audio-in-page-overlay .mochi-audio-confirmation button { display: inline-flex !important; visibility: visible !important; margin: 8px 8px 0 0; padding: 7px 12px; }
 
 @media (prefers-reduced-motion: reduce) {
   #mochi-audio-in-page-overlay * { scroll-behavior: auto !important; transition: none !important; }

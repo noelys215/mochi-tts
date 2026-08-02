@@ -65,6 +65,7 @@ test.beforeAll(async () => {
     response.type("html").send(`<!doctype html><html lang="en"><head><style>
       div { overflow: hidden !important; }
       button { display: none !important; }
+      section, textarea { display: none !important; }
     </style></head><body><main><p id="hostile-passage">
       Ordinary prose remains readable even when the site applies overflow clipping to every div element.
     </p></main></body></html>`);
@@ -165,6 +166,21 @@ test("the document overlay is not clipped by page div styles", async () => {
   });
   expect(isHittable).toBe(true);
   await expect(page.locator(pageButton)).toBeVisible();
+  await page.locator(pageButton).click();
+  await expect(page.locator(".mochi-audio-confirmation")).toBeVisible();
+  await expect(page.locator(".mochi-audio-confirmation textarea")).toBeVisible();
+});
+
+test("SPA navigation refreshes controls without duplicating the overlay", async () => {
+  const page = await fixture();
+  await enableFromPopup(page);
+  await page.evaluate(() => history.pushState({}, "", "/spa-route"));
+  await expect(page.locator("#mochi-audio-in-page-overlay")).toHaveAttribute(
+    "data-page-url",
+    "http://127.0.0.1:3000/spa-route",
+  );
+  await expect(page.locator("#mochi-audio-in-page-overlay")).toHaveCount(1);
+  await expect(page.locator(passageButton)).toHaveCount(5);
 });
 
 test("a passage reads only its cleaned text and opens the synchronized player", async () => {
