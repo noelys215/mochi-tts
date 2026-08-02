@@ -36,7 +36,7 @@ Load the extension:
 ## Use
 
 - Selection: select page text and choose **Read selection**, or use the selection context menu.
-- Hover: enable hover mode, point at an eligible paragraph or article, then use the page control. Articles require confirmation.
+- Hover: enable **Passage hover controls**, point at eligible prose, then use the floating passage or page action. LeetCode lesson iframes are supported; page reads require confirmation.
 - Article: choose **Read article**, edit the extracted preview, optionally normalize DSA notation or change code handling, then confirm.
 - In-page controls: choose **Enable on this tab** to add passage actions, **Read this page**, and a synchronized playback bar. Multi-chunk playback reports queue position; seeking is limited to the current chunk.
 - Playback: use play, pause, seek, speed, next, previous, stop, and clear controls. Playback continues after the popup closes.
@@ -54,3 +54,5 @@ For unit tests only, run `npm run test:unit`; browser integration tests use `npm
 ## Security and privacy
 
 The provider key remains server-side, the server binds to loopback by default, inputs are independently validated, and upstream errors are sanitized. Full text exists only while previewing, queueing, or generating audio. See [security](docs/security.md), [architecture](docs/architecture.md), and [troubleshooting](docs/troubleshooting.md).
+
+The extension retains narrow LeetCode host access so its content controller can run inside lesson frames. The `webNavigation` permission is used only to reinitialize enabled frame-local controls after iframe navigation or replacement; it does not grant page-content access by itself. No broad `<all_urls>` permission is requested.

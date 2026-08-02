@@ -47,17 +47,21 @@
     };
   }
 
-  function result(documentObject, element, strategy, confidence, siteId = null) {
-    const title = titleFor(documentObject, element, siteId);
-    return { element, strategy, confidence, siteId, ...title };
+  function isTopFrame(viewObject = globalThis) {
+    try { return viewObject.top === viewObject.self; } catch { return false; }
   }
 
-  function leetCodeRegion(documentObject, locationObject) {
+  function result(documentObject, element, strategy, confidence, siteId = null, viewObject = globalThis) {
+    const title = titleFor(documentObject, element, siteId);
+    return { element, strategy, confidence, siteId, isTopFrame: isTopFrame(viewObject), ...title };
+  }
+
+  function leetCodeRegion(documentObject, locationObject, viewObject = globalThis) {
     if (!isLeetCodeHostname(locationObject?.hostname)) return null;
     for (const selector of [".article-inner .block-markdown", ".article-inner", ".block-markdown"]) {
       const candidate = documentObject.querySelector(selector);
       if (suitable(candidate, { minimumLength: 80, minimumParagraphs: 2 })) {
-        return result(documentObject, candidate, "site-adapter", 0.95, "leetcode");
+        return result(documentObject, candidate, "site-adapter", 0.95, "leetcode", viewObject);
       }
     }
     return null;
@@ -80,22 +84,22 @@
     }) ? documentObject.body : null);
   }
 
-  function resolvePrimaryContentRegion(documentObject = document, locationObject = location) {
+  function resolvePrimaryContentRegion(documentObject = document, locationObject = location, viewObject = globalThis) {
     const articles = [...documentObject.querySelectorAll("article")]
       .filter((element) => suitable(element))
       .sort((a, b) => metrics(b).textLength - metrics(a).textLength);
-    if (articles[0]) return result(documentObject, articles[0], "semantic-article", 1);
+    if (articles[0]) return result(documentObject, articles[0], "semantic-article", 1, null, viewObject);
     const mains = [...documentObject.querySelectorAll("main")]
       .filter((element) => suitable(element))
       .sort((a, b) => metrics(b).textLength - metrics(a).textLength);
-    if (mains[0]) return result(documentObject, mains[0], "semantic-main", 0.98);
-    const adapted = leetCodeRegion(documentObject, locationObject);
+    if (mains[0]) return result(documentObject, mains[0], "semantic-main", 0.98, null, viewObject);
+    const adapted = leetCodeRegion(documentObject, locationObject, viewObject);
     if (adapted) return adapted;
     const fallback = fallbackRegion(documentObject);
-    return fallback ? result(documentObject, fallback, "prose-fallback", 0.65) : null;
+    return fallback ? result(documentObject, fallback, "prose-fallback", 0.65, null, viewObject) : null;
   }
 
   globalThis.__mochiAudioContentRegion = Object.freeze({
-    isLeetCodeHostname, leetCodeRegion, metrics, resolvePrimaryContentRegion, suitable,
+    isLeetCodeHostname, isTopFrame, leetCodeRegion, metrics, resolvePrimaryContentRegion, suitable,
   });
 })();

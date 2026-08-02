@@ -5,14 +5,16 @@ const IDLE_PLAYBACK = Object.freeze({
 export function createPlaybackSession() {
   let current = null;
 
-  function begin({ tabId, windowId, sourceUrl, sourceType, queueId, regionId = null }) {
+  function begin({ tabId, frameId = 0, windowId, sourceUrl, sourceType, queueId, regionId = null }) {
     if (!Number.isInteger(tabId) || !Number.isInteger(windowId) ||
+        !Number.isInteger(frameId) || frameId < 0 ||
         typeof sourceUrl !== "string" || typeof queueId !== "string") {
       throw new TypeError("Invalid playback owner.");
     }
     const previous = current;
     current = {
       ownerTabId: tabId,
+      ownerFrameId: frameId,
       ownerWindowId: windowId,
       sourceUrl,
       sourceType,
@@ -28,16 +30,18 @@ export function createPlaybackSession() {
     return previous;
   }
 
-  function owns(tabId) {
-    return Boolean(current && current.ownerTabId === tabId);
+  function owns(tabId, frameId) {
+    return Boolean(current && current.ownerTabId === tabId &&
+      (frameId === undefined || current.ownerFrameId === frameId));
   }
 
-  function viewFor(tabId, playback, queue) {
-    const ownsPlayback = owns(tabId);
+  function viewFor(tabId, playback, queue, frameId) {
+    const ownsPlayback = owns(tabId, frameId);
     return {
       session: {
         ownsPlayback,
-        otherTabActive: Boolean(current && !ownsPlayback),
+        otherTabActive: Boolean(current && current.ownerTabId !== tabId),
+        otherFrameActive: Boolean(current && current.ownerTabId === tabId && !ownsPlayback),
         ...(ownsPlayback ? { ...current } : {}),
       },
       playback: ownsPlayback ? playback : { ...IDLE_PLAYBACK },

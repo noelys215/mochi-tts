@@ -1,5 +1,6 @@
 (() => {
   if (globalThis.__mochiAudioPassageHoverControls) return;
+  document.documentElement.dataset.mochiAudioController = "ready";
 
   const TYPES = {
     enable: "PASSAGE_HOVER_CONTROLS_ENABLE",
@@ -220,6 +221,7 @@
       confidence: state.region.confidence,
       siteId: state.region.siteId,
       title: state.region.title,
+      isTopFrame: state.region.isTopFrame,
     } : null;
   }
 
@@ -491,11 +493,11 @@
     if (message?.target !== "content") return false;
     if (message.type === TYPES.enable) {
       enable(message.payload || {});
-      sendResponse({ ok: true, enabled: true });
+      sendResponse({ ok: true, enabled: true, region: regionMetadata() });
       return false;
     }
     if (message.type === TYPES.disable) {
-      disable();
+      disable(false);
       sendResponse({ ok: true, enabled: false });
       return false;
     }
@@ -526,7 +528,13 @@
   }
 
   function onKeyDown(event) {
-    if (event.key === "Escape") disable();
+    if (event.key === "Escape") {
+      send({ type: TYPES.disable }).catch(() => disable());
+    }
+  }
+
+  function onPageHide() {
+    send({ type: "FRAME_LIFECYCLE_ENDED", payload: { pageUrl: location.href } }).catch(() => {});
   }
 
   function enable(options = {}) {
@@ -546,6 +554,7 @@
     document.addEventListener("keydown", onKeyDown, true);
     document.addEventListener("scroll", schedulePosition, { passive: true, capture: true });
     document.addEventListener("load", schedulePosition, { capture: true });
+    addEventListener("pagehide", onPageHide, { once: true });
     addEventListener("resize", schedulePosition, { passive: true });
     document.fonts?.addEventListener?.("loadingdone", schedulePosition);
     state.lastUrl = location.href;
@@ -567,6 +576,7 @@
     document.removeEventListener("keydown", onKeyDown, true);
     document.removeEventListener("scroll", schedulePosition, { capture: true });
     document.removeEventListener("load", schedulePosition, { capture: true });
+    removeEventListener("pagehide", onPageHide);
     removeEventListener("resize", schedulePosition);
     document.fonts?.removeEventListener?.("loadingdone", schedulePosition);
     hideHoverUi();
@@ -579,6 +589,8 @@
 
   chrome.runtime.onMessage.addListener(onRuntimeMessage);
   globalThis.__mochiAudioPassageHoverControls = Object.freeze({
-    disable, enable, get enabled() { return state.enabled; },
+    disable, enable,
+    describe: () => ({ enabled: state.enabled, region: regionMetadata(), isTopFrame: window.top === window }),
+    get enabled() { return state.enabled; },
   });
 })();

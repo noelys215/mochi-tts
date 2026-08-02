@@ -2,7 +2,7 @@ export const ACTIVE_GENERATION_STATUSES = new Set(["validating", "generating", "
 
 const IDLE = Object.freeze({
   status: "idle", requestId: null, ownerTabId: null, sourceType: null,
-  sourceLabel: null, startedAt: null, cancellable: false, errorCode: null,
+  ownerFrameId: null, sourceLabel: null, startedAt: null, cancellable: false, errorCode: null,
 });
 
 export function createGenerationState({ now = Date.now } = {}) {
@@ -10,12 +10,12 @@ export function createGenerationState({ now = Date.now } = {}) {
 
   function snapshot() { return { ...current }; }
   function isCurrent(requestId) { return current.requestId === requestId; }
-  function begin({ requestId, ownerTabId, sourceType, sourceLabel = null }) {
+  function begin({ requestId, ownerTabId, ownerFrameId = 0, sourceType, sourceLabel = null }) {
     if (ACTIVE_GENERATION_STATUSES.has(current.status) || current.status === "awaiting-confirmation") {
       return { ok: false, code: "GENERATION_ALREADY_ACTIVE", activeRequestId: current.requestId };
     }
     current = {
-      status: "validating", requestId, ownerTabId, sourceType, sourceLabel,
+      status: "validating", requestId, ownerTabId, ownerFrameId, sourceType, sourceLabel,
       startedAt: now(), cancellable: true, errorCode: null,
     };
     return { ok: true, state: snapshot() };
@@ -30,9 +30,10 @@ export function createGenerationState({ now = Date.now } = {}) {
     current = { ...IDLE };
     return true;
   }
-  function viewFor(tabId) {
+  function viewFor(tabId, frameId) {
     const active = current.status !== "idle";
-    const ownsGeneration = active && current.ownerTabId === tabId;
+    const ownsGeneration = active && current.ownerTabId === tabId &&
+      (frameId === undefined || current.ownerFrameId === frameId);
     return {
       status: current.status,
       requestId: ownsGeneration ? current.requestId : null,
@@ -42,7 +43,8 @@ export function createGenerationState({ now = Date.now } = {}) {
       cancellable: active && current.cancellable,
       errorCode: ownsGeneration ? current.errorCode : null,
       ownsGeneration,
-      otherTabGenerating: active && !ownsGeneration,
+      otherTabGenerating: active && current.ownerTabId !== tabId,
+      otherFrameGenerating: active && current.ownerTabId === tabId && !ownsGeneration,
     };
   }
   return { begin, clear, isCurrent, snapshot, transition, viewFor };

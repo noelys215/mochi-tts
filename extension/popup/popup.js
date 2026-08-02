@@ -167,25 +167,13 @@ function updatePassageHoverControl(enabled) {
   passageHoverToggle.textContent = `Passage hover controls: ${enabled ? "On" : "Off"}`;
 }
 
-async function sendTabMessage(tabId, message) {
-  return chrome.tabs.sendMessage(tabId, { target: "content", ...message });
-}
-
-async function injectPassageHoverControls(tabId) {
-  await chrome.scripting.insertCSS({ target: { tabId }, files: ["content/in-page-controls.css"] });
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    files: [
-      "content/article-extractor.js", "content/content-region.js", "content/in-page-targets.js",
-      "content/in-page-player-state.js", "content/in-page-controls.js",
-    ],
-  });
-}
-
 async function refreshPassageHoverStatus() {
   try {
     const tab = await getActiveTab();
-    const response = await sendTabMessage(tab.id, { type: MESSAGE_TYPES.PASSAGE_HOVER_CONTROLS_STATUS_REQUEST });
+    const response = await chrome.runtime.sendMessage({
+      type: MESSAGE_TYPES.PASSAGE_HOVER_CONTROLS_STATUS_REQUEST,
+      payload: { tabId: tab.id },
+    });
     updatePassageHoverControl(Boolean(response?.enabled));
   } catch { updatePassageHoverControl(false); }
 }
@@ -308,21 +296,25 @@ passageHoverToggle.addEventListener("click", async () => {
   try {
     const tab = await getActiveTab();
     if (passageHoverEnabled) {
-      await sendTabMessage(tab.id, { type: MESSAGE_TYPES.PASSAGE_HOVER_CONTROLS_DISABLE });
-      await chrome.scripting.removeCSS({
-        target: { tabId: tab.id }, files: ["content/in-page-controls.css"],
-      }).catch(() => {});
+      const response = await chrome.runtime.sendMessage({
+        type: MESSAGE_TYPES.PASSAGE_HOVER_CONTROLS_DISABLE,
+        payload: { tabId: tab.id },
+      });
+      if (!response?.ok) throw new Error(response?.error || "Passage controls could not be disabled.");
       updatePassageHoverControl(false);
       setStatus("Passage hover controls disabled. Audio continues until stopped.");
     } else {
-      await injectPassageHoverControls(tab.id);
-      await sendTabMessage(tab.id, {
+      const response = await chrome.runtime.sendMessage({
         type: MESSAGE_TYPES.PASSAGE_HOVER_CONTROLS_ENABLE,
         payload: {
-          minimumLength: appSettings?.minimumHoverLength || HOVER_MINIMUM_LENGTH,
-          skipCode: appSettings?.skipCode !== false,
+          tabId: tab.id,
+          options: {
+            minimumLength: appSettings?.minimumHoverLength || HOVER_MINIMUM_LENGTH,
+            skipCode: appSettings?.skipCode !== false,
+          },
         },
       });
+      if (!response?.ok) throw new Error(response?.error || "Passage controls could not be enabled.");
       updatePassageHoverControl(true);
       setStatus("Passage hover controls enabled on this tab.");
     }
@@ -382,9 +374,10 @@ document.querySelector("#override-once").addEventListener("click", async () => {
 chrome.runtime.onMessage.addListener((message, sender) => {
   if (message?.type === MESSAGE_TYPES.TAB_PLAYBACK_STATE_CHANGED ||
       message?.type === MESSAGE_TYPES.PLAYBACK_STATE_CHANGED) refreshPlayback().catch(() => {});
-  if (message?.type === MESSAGE_TYPES.PASSAGE_HOVER_CONTROLS_STATUS_CHANGED && sender.tab?.id) {
+  if (message?.type === MESSAGE_TYPES.PASSAGE_HOVER_CONTROLS_STATUS_CHANGED) {
+    const changedTabId = sender.tab?.id || message.payload?.tabId;
     getActiveTab().then((tab) => {
-      if (tab.id === sender.tab.id) updatePassageHoverControl(message.payload?.enabled === true);
+      if (tab.id === changedTabId) updatePassageHoverControl(message.payload?.enabled === true);
     }).catch(() => {});
   }
   return false;

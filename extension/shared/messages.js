@@ -7,6 +7,7 @@ export const MESSAGE_TYPES = Object.freeze({
   PASSAGE_HOVER_READ: "PASSAGE_HOVER_READ",
   PAGE_HOVER_READ: "PAGE_HOVER_READ",
   PRIMARY_CONTENT_REGION_CHANGED: "PRIMARY_CONTENT_REGION_CHANGED",
+  FRAME_LIFECYCLE_ENDED: "FRAME_LIFECYCLE_ENDED",
   TAB_PLAYBACK_STATE_REQUEST: "TAB_PLAYBACK_STATE_REQUEST",
   TAB_PLAYBACK_STATE_CHANGED: "TAB_PLAYBACK_STATE_CHANGED",
   GENERATION_STATE_REQUEST: "GENERATION_STATE_REQUEST",
@@ -109,8 +110,38 @@ export function validateRegionChangedMessage(message) {
   if (region !== null && (!region || typeof region !== "object" ||
       !["semantic-article", "semantic-main", "site-adapter", "prose-fallback"].includes(region.strategy) ||
       !Number.isFinite(region.confidence) || region.confidence < 0 || region.confidence > 1 ||
+      (region.isTopFrame !== undefined && typeof region.isTopFrame !== "boolean") ||
       typeof region.title !== "string" || region.title.length > 300)) return "Invalid content-region metadata.";
   return null;
+}
+
+export function validatePassageHoverControlMessage(message) {
+  if (!message || ![
+    MESSAGE_TYPES.PASSAGE_HOVER_CONTROLS_ENABLE,
+    MESSAGE_TYPES.PASSAGE_HOVER_CONTROLS_DISABLE,
+    MESSAGE_TYPES.PASSAGE_HOVER_CONTROLS_STATUS_REQUEST,
+  ].includes(message.type) || !message.payload || typeof message.payload !== "object") {
+    return "Invalid passage-hover control message.";
+  }
+  if (!Number.isInteger(message.payload.tabId) || message.payload.tabId < 1) {
+    return "Invalid passage-hover tab.";
+  }
+  if (message.type === MESSAGE_TYPES.PASSAGE_HOVER_CONTROLS_ENABLE) {
+    const options = message.payload.options;
+    if (!options || typeof options !== "object" ||
+        !Number.isFinite(options.minimumLength) || options.minimumLength < 20 || options.minimumLength > 10_000 ||
+        typeof options.skipCode !== "boolean") return "Invalid passage-hover options.";
+  }
+  return null;
+}
+
+export function validateFrameLifecycleMessage(message) {
+  if (!message || message.type !== MESSAGE_TYPES.FRAME_LIFECYCLE_ENDED ||
+      !message.payload || typeof message.payload !== "object") return "Invalid frame lifecycle message.";
+  try {
+    const url = new URL(message.payload.pageUrl);
+    return /^https?:$/.test(url.protocol) ? null : "Invalid frame URL.";
+  } catch { return "Invalid frame URL."; }
 }
 
 export function validatePlaybackCommand(message) {
