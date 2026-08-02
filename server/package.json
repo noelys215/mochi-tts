@@ -1,0 +1,17 @@
+{
+  "name": "fish-study-reader-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "dotenv": "17.4.2",
+    "express": "5.2.1"
+  }
+}
