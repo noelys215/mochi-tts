@@ -9,8 +9,32 @@
   <body>
     <main>
       <h1>Fish Study Reader</h1>
-      <p>Select text on the page, then read it with the local mock voice.</p>
+      <p>Select text on the page, then read it through your local speech server.</p>
       <button id="read-selection" type="button">Read selection</button>
+      <button id="hover-toggle" type="button" aria-pressed="false">
+        Enable hover mode
+      </button>
+      <section aria-labelledby="playback-heading">
+        <h2 id="playback-heading">Playback</h2>
+        <div class="transport-controls">
+          <button type="button" data-playback="PLAYBACK_PLAY">Play</button>
+          <button type="button" data-playback="PLAYBACK_PAUSE">Pause</button>
+          <button type="button" data-playback="PLAYBACK_RESUME">Resume</button>
+          <button type="button" data-playback="PLAYBACK_STOP">Stop</button>
+          <button type="button" data-seek="-10">−10s</button>
+          <button type="button" data-seek="10">+10s</button>
+          <label>
+            Speed
+            <select id="playback-rate">
+              <option value="0.75">0.75×</option>
+              <option value="1" selected>1×</option>
+              <option value="1.25">1.25×</option>
+              <option value="1.5">1.5×</option>
+              <option value="2">2×</option>
+            </select>
+          </label>
+        </div>
+      </section>
       <p id="status" role="status" aria-live="polite">Ready.</p>
     </main>
     <script type="module" src="popup.js"></script>

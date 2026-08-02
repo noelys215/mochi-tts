@@ -14,7 +14,7 @@
     "proof": "npm test",
     "start": "npm --workspace server start",
     "test": "npm run test:unit && npm run test:browser",
-    "test:unit": "npm --workspace server test",
+    "test:unit": "npm --workspace server test && node --test tests/unit/*.test.js",
     "test:browser": "playwright test"
   },
   "devDependencies": {

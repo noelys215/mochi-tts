@@ -19,6 +19,11 @@ h1 {
   font-size: 1.15rem;
 }
 
+h2 {
+  margin: 18px 0 8px;
+  font-size: 0.95rem;
+}
+
 p {
   line-height: 1.4;
 }
@@ -33,6 +38,39 @@ button {
   cursor: pointer;
   font: inherit;
   font-weight: 650;
+}
+
+#hover-toggle {
+  margin-top: 8px;
+  background: #315c57;
+}
+
+.transport-controls {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.transport-controls button {
+  padding: 7px 5px;
+  font-size: 0.8rem;
+}
+
+.transport-controls label {
+  display: flex;
+  grid-column: span 2;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 0.8rem;
+}
+
+select {
+  border: 1px solid #83a6a1;
+  border-radius: 6px;
+  padding: 5px;
+  background: white;
+  color: inherit;
 }
 
 button:disabled {

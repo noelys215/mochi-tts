@@ -1,6 +1,7 @@
 import { requestAudio } from "../shared/backend-client.js";
 import {
   MESSAGE_TYPES,
+  validateHoverPassageReadMessage,
   validateSelectionReadMessage,
 } from "../shared/messages.js";
 
@@ -32,11 +33,19 @@ chrome.contextMenus.onClicked.addListener((info) => {
   });
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type !== MESSAGE_TYPES.SELECTION_READ_REQUEST) {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  const isSelection = message?.type === MESSAGE_TYPES.SELECTION_READ_REQUEST;
+  const isHover = message?.type === MESSAGE_TYPES.HOVER_PASSAGE_READ;
+  if (!isSelection && !isHover) {
     return false;
   }
-  const validationError = validateSelectionReadMessage(message);
+  if (isHover && !sender.tab?.id) {
+    sendResponse({ ok: false, error: "Invalid hover request source." });
+    return false;
+  }
+  const validationError = isHover
+    ? validateHoverPassageReadMessage(message)
+    : validateSelectionReadMessage(message);
   if (validationError) {
     sendResponse({ ok: false, error: validationError });
     return false;
