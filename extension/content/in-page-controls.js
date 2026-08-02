@@ -359,8 +359,23 @@
     const shadow = host.attachShadow({ mode: "open" });
     const logoUrl = chrome.runtime.getURL("assets/mochi.png");
     shadow.innerHTML = `<style>
-      :host{all:initial}.bar{box-sizing:border-box;display:flex;align-items:center;gap:7px;width:min(760px,calc(100vw - 24px));padding:9px 12px;border:1px solid #9a7c3e;border-radius:16px;background:#fff8e7;color:#444a50;box-shadow:0 8px 30px #444a5033;font:13px/1.2 ui-rounded,system-ui,sans-serif}.logo{width:32px;height:32px}button,select,input{font:inherit}button{min-width:34px;min-height:34px;border:1px solid #9a7c3e;border-radius:8px;background:#fffdf7;color:#3f6f34;cursor:pointer}button:disabled,input:disabled{cursor:not-allowed;opacity:.5}button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid #9b3154;outline-offset:2px}.progress{flex:1;min-width:90px;accent-color:#3f6f34}.time,.queue{white-space:nowrap}.generation{display:flex;align-items:center;gap:6px}.spinner{display:inline-block;animation:spin .8s linear infinite}.status{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}@keyframes spin{to{transform:rotate(360deg)}}@media(max-width:620px){.optional{display:none}.bar{flex-wrap:wrap}.progress{min-width:45vw}}@media(prefers-reduced-motion:reduce){*{transition:none!important}.spinner{animation:none}}</style>
-      <div class="bar" role="region" aria-label="Mochi Audio playback controls"><img class="logo optional" src="${logoUrl}" alt=""><span class="generation" data-generation hidden><span class="spinner" aria-hidden="true">◌</span><span data-generation-text>Generating audio…</span><button data-action="cancel-generation">Cancel</button></span><button data-command="QUEUE_PREVIOUS" aria-label="Previous chunk">⏮</button><button data-command="PLAYBACK_PLAY" aria-label="Play">▶</button><button data-command="PLAYBACK_PAUSE" aria-label="Pause">❚❚</button><button data-command="PLAYBACK_RESUME" aria-label="Resume">↻</button><button data-command="PLAYBACK_STOP" aria-label="Stop">■</button><button data-command="QUEUE_NEXT" aria-label="Next chunk">⏭</button><input class="progress" type="range" min="0" max="0" value="0" step="0.1" aria-label="Current chunk playback position"><span class="time"><span data-elapsed>0:00</span> / <span data-duration>0:00</span></span><span class="queue optional" data-queue>Chunk 1 of 1</span><label class="optional">Speed <select aria-label="Playback speed"><option value="0.75">0.75×</option><option value="1">1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label><button data-close aria-label="Close playback bar">×</button><span class="status" aria-live="polite" data-status></span></div>`;
+      :host{all:initial}.player{box-sizing:border-box;display:grid;gap:9px;width:min(720px,calc(100vw - 24px));max-width:100%;padding:10px 12px;border:1px solid #9a7c3e;border-radius:16px;background:#fff8e7;color:#444a50;box-shadow:0 8px 30px #444a5033;font:13px/1.25 ui-rounded,system-ui,sans-serif}.row{min-width:0}.status-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:9px}.identity{display:flex;align-items:center;gap:7px;min-width:0;font-weight:700;color:#9b3154}.logo{width:30px;height:30px;flex:none}.status-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.status-actions,.controls{display:flex;align-items:center;gap:7px;min-width:0}.controls{justify-content:center;flex-wrap:wrap}.progress-row{display:grid;grid-template-columns:minmax(80px,1fr) auto auto;align-items:center;gap:9px}.time,.part{white-space:nowrap;font-variant-numeric:tabular-nums}.part{color:#686f75}.speed{display:flex;align-items:center;gap:5px}button,select,input{font:inherit}button{min-width:36px;min-height:34px;border:1px solid #b9a678;border-radius:9px;background:#fffdf7;color:#3f6f34;cursor:pointer;padding:6px 10px}button.primary{border-color:#3f6f34;background:#3f6f34;color:white;font-weight:700}button.cancel{border-color:#9b3154;background:#9b3154;color:white;font-weight:700}button.quiet{border-color:transparent;background:transparent;color:#686f75}button:disabled{cursor:not-allowed;opacity:.42}button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid #9b3154;outline-offset:2px}.progress{width:100%;min-width:0;accent-color:#3f6f34}.spinner{display:inline-grid;width:18px;height:18px;place-items:center;flex:none;animation:spin .8s linear infinite}.live{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}[hidden]{display:none!important}@keyframes spin{to{transform:rotate(360deg)}}@media(max-width:420px){.player{width:calc(100vw - 16px);padding:9px;gap:8px}.identity-name{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}.status-row{gap:6px}.controls{justify-content:flex-start}.progress-row{grid-template-columns:minmax(0,1fr) auto}.part{grid-column:1/-1;text-align:right}.speed-label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}button{padding-inline:8px}}@media(prefers-reduced-motion:reduce){*{transition:none!important}.spinner{animation:none}}</style>
+      <div class="player" role="region" aria-label="Mochi Audio playback controls" aria-busy="false" data-mode="ready">
+        <div class="row status-row">
+          <div class="identity"><img class="logo" src="${logoUrl}" alt=""><span class="identity-name">Mochi Audio</span></div>
+          <div class="status-text"><span class="spinner" data-spinner aria-hidden="true" hidden>◌</span><span data-player-status>Ready</span></div>
+          <div class="status-actions"><button class="primary" data-action="retry-generation" hidden>Retry</button><button class="cancel" data-action="cancel-generation" hidden>Cancel</button><button class="quiet" data-close aria-label="Close in-page player">×</button></div>
+        </div>
+        <div class="row controls" data-controls hidden>
+          <button data-previous data-command="QUEUE_PREVIOUS" aria-label="Previous part" hidden>⏮</button>
+          <button class="primary" data-primary data-command="PLAYBACK_PLAY" aria-label="Play audio">▶ <span>Play</span></button>
+          <button data-next data-command="QUEUE_NEXT" aria-label="Next part" hidden>⏭</button>
+          <button data-command="PLAYBACK_STOP" aria-label="Stop audio">■ <span>Stop</span></button>
+          <label class="speed" data-speed hidden><span class="speed-label">Speed</span><select aria-label="Playback speed"><option value="0.75">0.75×</option><option value="1">1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label>
+        </div>
+        <div class="row progress-row" data-progress-row hidden><input class="progress" type="range" min="0" max="0" value="0" step="0.1" aria-label="Current part playback position"><span class="time" data-time></span><span class="part" data-part hidden></span></div>
+        <span class="live" aria-live="polite" aria-atomic="true" data-live></span>
+      </div>`;
     shadow.addEventListener("click", onPlayerClick);
     shadow.querySelector("select").addEventListener("change", (event) => send({
       type: "PLAYBACK_RATE_SET", payload: { rate: Number(event.target.value) },
@@ -375,6 +390,14 @@
   }
 
   function onPlayerClick(event) {
+    if (event.target.closest?.('[data-action="retry-generation"]')) {
+      if (state.activeTarget?.isConnected) readPassage();
+      else {
+        state.playerHost?.remove();
+        state.playerHost = null;
+      }
+      return;
+    }
     if (event.target.closest?.('[data-action="cancel-generation"]')) {
       send({ type: TYPES.generationCancel, payload: { requestId: state.playerState?.generation?.requestId } }).catch(() => {});
       return;
@@ -393,13 +416,15 @@
     state.playerState = shared;
     const view = globalThis.__mochiAudioInPagePlayerState.map(shared);
     const { playback } = view;
-    const generating = shared?.generation?.ownsGeneration && ["validating", "generating", "buffering"].includes(shared.generation.status);
+    const generating = view.mode === "generating";
     const generationBlocked = generating || shared?.generation?.status === "awaiting-confirmation" ||
       shared?.generation?.otherTabGenerating;
     setPageState(generationBlocked ? "disabled" : "idle");
     if (generating) setPassageState("loading", "Generating passage audio");
     else if (generationBlocked) setPassageState("disabled");
-    if ((!shared?.session?.ownsPlayback || !view.visible) && !generating) {
+    const standaloneStatus = shared?.generation?.ownsGeneration &&
+      ["generating", "failed", "cancelled"].includes(view.mode);
+    if (!view.visible || (!shared?.session?.ownsPlayback && !standaloneStatus)) {
       state.playerHost?.remove();
       state.playerHost = null;
       state.activeRequestId = null;
@@ -410,20 +435,35 @@
     if (state.hiddenRequestId && state.hiddenRequestId === playback.requestId) return;
     if (state.hiddenRequestId !== playback.requestId) state.hiddenRequestId = null;
     const shadow = createPlayer().shadowRoot;
-    const generationView = shadow.querySelector("[data-generation]");
-    generationView.hidden = !generating;
-    shadow.querySelector("[data-generation-text]").textContent = shared.generation?.status === "buffering" ? "Buffering…" : "Generating audio…";
-    shadow.querySelectorAll("[data-command='QUEUE_PREVIOUS'],[data-command='QUEUE_NEXT'],[data-command='PLAYBACK_PLAY'],[data-command='PLAYBACK_RESUME']")
-      .forEach((button) => { button.disabled = generating; });
+    const player = shadow.querySelector(".player");
+    player.dataset.mode = view.mode;
+    player.setAttribute("aria-busy", String(view.mode === "generating"));
+    shadow.querySelector("[data-player-status]").textContent = view.statusText;
+    shadow.querySelector("[data-live]").textContent = `${view.statusText}.`;
+    shadow.querySelector("[data-spinner]").hidden = !view.showSpinner;
+    shadow.querySelector('[data-action="retry-generation"]').hidden = !view.showRetry;
+    shadow.querySelector('[data-action="cancel-generation"]').hidden = !view.showCancel;
+    shadow.querySelector("[data-controls]").hidden = !view.showTransport;
+    const primary = shadow.querySelector("[data-primary]");
+    primary.dataset.command = view.primary.command;
+    primary.setAttribute("aria-label", view.primary.label);
+    primary.firstChild.textContent = `${view.primary.icon} `;
+    primary.querySelector("span").textContent = view.primary.text;
+    const previous = shadow.querySelector("[data-previous]");
+    const next = shadow.querySelector("[data-next]");
+    previous.hidden = next.hidden = !view.showParts;
+    previous.disabled = view.previousDisabled;
+    next.disabled = view.nextDisabled;
+    shadow.querySelector("[data-speed]").hidden = !view.showSpeed;
     const progress = shadow.querySelector("input");
     progress.max = String(view.duration);
     progress.value = String(view.currentTime);
-    progress.disabled = !view.determinate;
-    shadow.querySelector("[data-elapsed]").textContent = view.elapsedLabel;
-    shadow.querySelector("[data-duration]").textContent = view.durationLabel;
+    shadow.querySelector("[data-progress-row]").hidden = !view.showProgress;
+    shadow.querySelector("[data-time]").textContent = view.timingLabel || "";
+    const part = shadow.querySelector("[data-part]");
+    part.hidden = !view.partLabel;
+    part.textContent = view.partLabel || "";
     shadow.querySelector("select").value = String(playback.playbackRate || 1);
-    shadow.querySelector("[data-queue]").textContent = shared.queue?.currentIndex < 0 ? "Preparing first chunk" : view.queueLabel;
-    shadow.querySelector("[data-status]").textContent = generating ? "Generating audio." : `${playback.status}. Current-chunk progress.`;
   }
 
   function onRuntimeMessage(message, _sender, sendResponse) {

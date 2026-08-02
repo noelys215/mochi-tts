@@ -138,20 +138,69 @@ const playerContext = vm.createContext({});
 vm.runInContext(playerSource, playerContext);
 const player = playerContext.__mochiAudioInPagePlayerState;
 
-test("player maps current-chunk progress without inventing unknown duration", () => {
+test("player maps generating state without technical playback clutter", () => {
   const loading = player.map({
-    playback: { status: "paused", currentTime: 4, duration: 0 },
+    generation: { status: "generating", ownsGeneration: true, cancellable: true },
+    playback: { status: "idle", currentTime: 0, duration: 0 },
     queue: { currentIndex: 1, entries: [{}, {}, {}] },
   });
-  assert.equal(loading.determinate, false);
-  assert.equal(loading.durationLabel, "Loading");
-  assert.equal(loading.queueLabel, "Chunk 2 of 3");
+  assert.equal(loading.mode, "generating");
+  assert.equal(loading.statusText, "Preparing audio…");
+  assert.equal(loading.showCancel, true);
+  assert.equal(loading.showTransport, false);
+  assert.equal(loading.showProgress, false);
+  assert.equal(loading.timingLabel, null);
+});
 
-  const known = player.map({
+test("player maps playing and paused states to one stateful primary action", () => {
+  const playing = player.map({
     playback: { status: "playing", currentTime: 65.8, duration: 120 },
     queue: { currentIndex: 0, entries: [{}] },
   });
-  assert.equal(known.currentTime, 65.8);
-  assert.equal(known.elapsedLabel, "1:05");
-  assert.equal(known.durationLabel, "2:00");
+  assert.equal(playing.primary.label, "Pause audio");
+  assert.equal(playing.primary.command, "PLAYBACK_PAUSE");
+  assert.equal(playing.showParts, false);
+  assert.equal(playing.showSpeed, true);
+
+  const paused = player.map({
+    playback: { status: "paused", currentTime: 4, duration: 0 },
+    queue: { currentIndex: 1, entries: [{}, {}, {}] },
+  });
+  assert.equal(paused.primary.label, "Resume audio");
+  assert.equal(paused.primary.command, "PLAYBACK_RESUME");
+  assert.equal(paused.showParts, true);
+  assert.equal(paused.previousDisabled, false);
+  assert.equal(paused.nextDisabled, false);
+  assert.equal(paused.determinate, false);
+  assert.equal(paused.durationLabel, null);
+  assert.equal(paused.partLabel, "Part 2 of 3");
+});
+
+test("player maps finished, failed, and timing states with user-facing labels", () => {
+  const finished = player.map({
+    playback: { status: "ended", currentTime: 120, duration: 120 },
+    queue: { currentIndex: 0, entries: [{}] },
+  });
+  assert.equal(finished.statusText, "Playback finished");
+  assert.equal(finished.primary.label, "Replay audio");
+  assert.equal(finished.timingLabel, "2:00 / 2:00");
+
+  const failed = player.map({
+    generation: { status: "failed", ownsGeneration: true },
+    playback: { status: "idle", currentTime: 0, duration: 0 },
+  });
+  assert.equal(failed.statusText, "Could not prepare audio");
+  assert.equal(failed.showCancel, false);
+  assert.equal(failed.showRetry, true);
+  assert.equal(failed.showSpeed, false);
+
+  const buffering = player.map({
+    generation: { status: "buffering", ownsGeneration: true, cancellable: true },
+    playback: { status: "playing", currentTime: 10, duration: 30 },
+    queue: { currentIndex: 0, entries: [{}, {}] },
+  });
+  assert.equal(buffering.mode, "buffering");
+  assert.equal(buffering.statusText, "Loading next part…");
+  assert.equal(buffering.showTransport, true);
+  assert.equal(buffering.showCancel, true);
 });
