@@ -127,6 +127,45 @@ async function commandFromTab(page, type) {
   }, { id: tabId, command: type });
 }
 
+async function renderPlayerState(page, payload) {
+  await page.bringToFront();
+  const tabId = await serviceWorker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    return tab.id;
+  });
+  await serviceWorker.evaluate(({ id, state }) => chrome.tabs.sendMessage(id, {
+    target: "content", type: "TAB_PLAYBACK_STATE_CHANGED", payload: state,
+  }), { id: tabId, state: payload });
+}
+
+async function expectPlayerContained(page) {
+  const bar = page.locator(`${player} .player`);
+  const barBox = await bar.boundingBox();
+  expect(barBox.x).toBeGreaterThanOrEqual(0);
+  expect(barBox.x + barBox.width).toBeLessThanOrEqual(page.viewportSize().width);
+  expect(barBox.y + barBox.height).toBeLessThanOrEqual(page.viewportSize().height);
+  const boxes = await page.locator(`${player} button:visible,${player} select:visible,${player} input:visible`)
+    .evaluateAll((nodes) => nodes.map((node) => {
+      const rect = node.getBoundingClientRect();
+      return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+    }));
+  for (const box of boxes) {
+    expect(box.left).toBeGreaterThanOrEqual(barBox.x - 1);
+    expect(box.right).toBeLessThanOrEqual(barBox.x + barBox.width + 1);
+    expect(box.top).toBeGreaterThanOrEqual(barBox.y - 1);
+    expect(box.bottom).toBeLessThanOrEqual(barBox.y + barBox.height + 1);
+  }
+  for (let left = 0; left < boxes.length; left += 1) {
+    for (let right = left + 1; right < boxes.length; right += 1) {
+      const overlapWidth = Math.min(boxes[left].right, boxes[right].right) -
+        Math.max(boxes[left].left, boxes[right].left);
+      const overlapHeight = Math.min(boxes[left].bottom, boxes[right].bottom) -
+        Math.max(boxes[left].top, boxes[right].top);
+      expect(Math.min(overlapWidth, overlapHeight)).toBeLessThanOrEqual(1);
+    }
+  }
+}
+
 async function enable(page) {
   const popup = await popupFor(page);
   await popup.evaluate(() => document.querySelector("#passage-hover-toggle").click());
@@ -159,6 +198,9 @@ test("unified controls are opt-in and reuse one hover passage button", async () 
   await button.click();
   await expect.poll(() => generatedTexts.length).toBe(1);
   expect(generatedTexts[0]).toContain("Healthy reefs reduce wave energy");
+  await expect(page.locator(player)).toHaveCount(1);
+  await page.locator(`${player} [data-command="PLAYBACK_STOP"]`).click();
+  await expect(page.locator(player)).toHaveCount(0);
   await popup.close();
 });
 
@@ -173,7 +215,11 @@ test("generation feedback prevents duplicate clicks and Cancel restores controls
   await expect(button).toHaveAttribute("aria-busy", "true");
   await expect(button).toBeDisabled();
   await expect(button).toHaveAttribute("aria-label", "Generating passage audio");
-  await expect(page.locator(`${player} [data-generation-text]`)).toHaveText("Generating audio…");
+  await expect(page.locator(`${player} [data-player-status]`)).toHaveText("Preparing audio…");
+  await expect(page.locator(`${player} [data-controls]`)).toBeHidden();
+  await expect(page.locator(`${player} [data-progress-row]`)).toBeHidden();
+  await expect(page.locator(`${player} [data-action="cancel-generation"]`)).toBeVisible();
+  await expect(page.locator(player)).not.toContainText(/Chunk|Queue|0:00/);
   await expect(page.locator(pageButton)).toBeDisabled();
 
   await button.evaluate((node) => { node.click(); node.click(); });
@@ -187,6 +233,69 @@ test("generation feedback prevents duplicate clicks and Cancel restores controls
   const after = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "USAGE_STATE_REQUEST" }));
   expect(after.state.records).toHaveLength(before.state.records.length);
   await popup.close();
+});
+
+test("compact player uses one stateful action and responsive part controls", async () => {
+  const page = await genericPage();
+  await page.setViewportSize({ width: 320, height: 568 });
+  await enable(page);
+  const session = { ownsPlayback: true, otherTabActive: false };
+  const generation = { status: "idle", ownsGeneration: false, cancellable: false };
+  await renderPlayerState(page, {
+    session: { ownsPlayback: false, otherTabActive: false },
+    generation: { status: "generating", ownsGeneration: true, cancellable: true },
+    playback: { status: "idle", requestId: null, currentTime: 0, duration: 0, playbackRate: 1 },
+    queue: { currentIndex: -1, entries: [{}] },
+  });
+  await expect(page.locator(`${player} [data-player-status]`)).toHaveText("Preparing audio…");
+  await expect(page.locator(`${player} [data-controls]`)).toBeHidden();
+  await expectPlayerContained(page);
+
+  await renderPlayerState(page, {
+    session, generation,
+    playback: { status: "playing", requestId: "request_ui_123", currentTime: 22, duration: 36, playbackRate: 1 },
+    queue: { currentIndex: 0, entries: [{}] },
+  });
+  await expect(page.locator(`${player} [data-player-status]`)).toHaveText("Playing");
+  await expect(page.locator(`${player} [data-primary]`)).toHaveAttribute("aria-label", "Pause audio");
+  await expect(page.locator(`${player} [data-previous]`)).toBeHidden();
+  await expect(page.locator(`${player} [data-next]`)).toBeHidden();
+  await expect(page.locator(`${player} [data-time]`)).toHaveText("0:22 / 0:36");
+  await expect(page.locator(player)).not.toContainText(/Chunk|Queue/);
+  await expectPlayerContained(page);
+
+  await renderPlayerState(page, {
+    session, generation,
+    playback: { status: "paused", requestId: "request_ui_123", currentTime: 22, duration: 36, playbackRate: 1.25 },
+    queue: { currentIndex: 1, entries: [{}, {}, {}] },
+  });
+  await expect(page.locator(`${player} [data-primary]`)).toHaveAttribute("aria-label", "Resume audio");
+  await expect(page.locator(`${player} [data-part]`)).toHaveText("Part 2 of 3");
+  await expect(page.locator(`${player} [data-previous]`)).toBeEnabled();
+  await expect(page.locator(`${player} [data-next]`)).toBeEnabled();
+  await expectPlayerContained(page);
+
+  await page.setViewportSize({ width: 375, height: 667 });
+  await expectPlayerContained(page);
+  await renderPlayerState(page, {
+    session, generation,
+    playback: { status: "ended", requestId: "request_ui_123", currentTime: 36, duration: 36, playbackRate: 1 },
+    queue: { currentIndex: 0, entries: [{}] },
+  });
+  await expect(page.locator(`${player} [data-player-status]`)).toHaveText("Playback finished");
+  await expect(page.locator(`${player} [data-primary]`)).toHaveAttribute("aria-label", "Replay audio");
+  await renderPlayerState(page, {
+    session: { ownsPlayback: false, otherTabActive: false },
+    generation: { status: "failed", ownsGeneration: true, cancellable: false },
+    playback: { status: "idle", requestId: null, currentTime: 0, duration: 0, playbackRate: 1 },
+    queue: { currentIndex: -1, entries: [] },
+  });
+  await expect(page.locator(`${player} [data-player-status]`)).toHaveText("Could not prepare audio");
+  await expect(page.locator(`${player} [data-action="retry-generation"]`)).toBeVisible();
+  await expect(page.locator(`${player} [data-action="cancel-generation"]`)).toBeHidden();
+  await expect(page.locator(`${player} [data-controls]`)).toBeHidden();
+  await page.locator(`${player} [data-close]`).click();
+  await expect(page.locator(player)).toHaveCount(0);
 });
 
 test("LeetCode adapter preserves inline code, deduplicates math, and exposes page reading", async () => {
