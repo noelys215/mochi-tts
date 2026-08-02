@@ -3,6 +3,7 @@ import { once } from "node:events";
 import test from "node:test";
 
 import { createApp } from "../src/app.js";
+import { FishAudioClientError } from "../src/fish-audio-client.js";
 
 async function withServer(options, callback) {
   const server = createApp(options).listen(0, "127.0.0.1");
@@ -83,5 +84,59 @@ test("TTS endpoint safely rejects invalid input", async () => {
       assert.equal(payload.error.code, testCase.code);
       assert.equal(JSON.stringify(payload).includes("🐟🐟"), false);
     }
+  });
+});
+
+test("TTS endpoint returns configured provider audio and usage", async () => {
+  const ttsProvider = {
+    mode: "fish",
+    async synthesize({ inputBytes }) {
+      return {
+        audio: Buffer.from([73, 68, 51]),
+        contentType: "audio/mpeg",
+        estimatedCostMicrousd: inputBytes * 15,
+        pricingMode: "fish-estimate",
+      };
+    },
+  };
+
+  await withServer({ ttsProvider }, async (baseUrl) => {
+    const health = await fetch(`${baseUrl}/api/health`);
+    assert.deepEqual(await health.json(), { status: "ok", mode: "fish" });
+
+    const response = await fetch(`${baseUrl}/api/tts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "Fish", requestId: "request_real_123" }),
+    });
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-type"), /^audio\/mpeg/);
+    assert.equal(response.headers.get("x-estimated-cost-microusd"), "60");
+    assert.equal(response.headers.get("x-pricing-mode"), "fish-estimate");
+  });
+});
+
+test("TTS endpoint maps provider failures to sanitized errors", async () => {
+  const ttsProvider = {
+    mode: "fish",
+    async synthesize() {
+      throw new FishAudioClientError("TIMEOUT", "Fish Audio timed out.");
+    },
+  };
+
+  await withServer({ ttsProvider }, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/tts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "Fish", requestId: "request_timeout_123" }),
+    });
+    assert.equal(response.status, 504);
+    assert.deepEqual(await response.json(), {
+      error: {
+        code: "TIMEOUT",
+        message: "Fish Audio timed out.",
+        requestId: "request_timeout_123",
+      },
+    });
   });
 });

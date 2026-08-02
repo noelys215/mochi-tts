@@ -1,4 +1,4 @@
-import { requestMockAudio } from "../shared/backend-client.js";
+import { requestAudio } from "../shared/backend-client.js";
 import {
   MESSAGE_TYPES,
   validateSelectionReadMessage,
@@ -70,24 +70,24 @@ async function ensureOffscreenDocument() {
   }
 }
 
-function arrayBufferToDataUrl(arrayBuffer) {
+function arrayBufferToDataUrl(arrayBuffer, contentType) {
   const bytes = new Uint8Array(arrayBuffer);
   let binary = "";
   for (let offset = 0; offset < bytes.length; offset += 8_192) {
     binary += String.fromCharCode(...bytes.subarray(offset, offset + 8_192));
   }
-  return `data:audio/wav;base64,${btoa(binary)}`;
+  return `data:${contentType};base64,${btoa(binary)}`;
 }
 
 async function readAndPlay(payload) {
-  const result = await requestMockAudio(payload);
+  const result = await requestAudio(payload);
   await ensureOffscreenDocument();
   const playback = await chrome.runtime.sendMessage({
     target: "offscreen",
     type: MESSAGE_TYPES.PLAYBACK_LOAD,
     payload: {
       requestId: payload.requestId,
-      audioUrl: arrayBufferToDataUrl(result.audio),
+      audioUrl: arrayBufferToDataUrl(result.audio, result.contentType),
     },
   });
   if (!playback?.ok) {

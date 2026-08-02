@@ -12,7 +12,7 @@ async function safeProviderError(response) {
   return "The local speech server rejected the request.";
 }
 
-export async function requestMockAudio({
+export async function requestAudio({
   text,
   requestId,
   backendUrl = DEFAULT_BACKEND_URL,
@@ -38,6 +38,7 @@ export async function requestMockAudio({
 
   return {
     audio: await response.arrayBuffer(),
+    contentType: response.headers.get("content-type"),
     usage: {
       requestId: response.headers.get("x-request-id"),
       inputBytes: Number(response.headers.get("x-input-bytes")),

@@ -64,6 +64,13 @@ Chrome Extensions:
 - The endpoint reference does not identify the successful response MIME type or usage-metadata headers. Inspect the official schema and a controlled authenticated response before strict response validation and completed-request accounting are implemented.
 - Current live documentation supersedes an older indexed excerpt that listed only `s1`/`s2-pro`. Model names, free-tier availability, prices, and limits must be reverified immediately before Fish integration and before release.
 
+### Phase 2 reverification — 2026-08-02
+
+- The official current contract still uses `POST /v1/tts`, `Authorization: Bearer`, `Content-Type: application/json`, and a required `model` header. The minimal configured voice request uses `text`, `reference_id`, and `format`; success is binary audio.
+- Current model/pricing documentation lists `s2.1-pro`, `s2-pro`, and `s1` at $15/M UTF-8 bytes and `s2.1-pro-free` at $0/M. `s2.1-pro` is the recommended production model; the free variant has no guarantees.
+- Official retry guidance is limited to `429` and `5xx` with exponential backoff. Other `4xx` failures require configuration or request changes and must not be retried.
+- A maximum input-text size, guaranteed success MIME type, response usage headers, and free-tier quota remain unpublished. The adapter therefore enforces a configurable local byte limit, derives usage locally, and accepts binary audio with either an audio MIME type or `application/octet-stream`.
+
 ## Chrome extension contract
 
 - Use Manifest V3 with `background.service_worker`; extension service workers are event-driven, may be unloaded when dormant, and cannot access the DOM. Durable state must not depend on service-worker globals.

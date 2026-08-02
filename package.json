@@ -10,6 +10,8 @@
     "node": ">=20"
   },
   "scripts": {
+    "manual:fish": "npm --workspace server run manual:fish --",
+    "proof": "npm test",
     "start": "npm --workspace server start",
     "test": "npm run test:unit && npm run test:browser",
     "test:unit": "npm --workspace server test",

@@ -1,6 +1,7 @@
 import express from "express";
 
-import { createMockWav } from "./mock-audio.js";
+import { FishAudioClientError } from "./fish-audio-client.js";
+import { createTtsProvider } from "./tts-provider.js";
 import { validateTtsRequest } from "./validation.js";
 
 function sendError(response, status, code, message, requestId) {
@@ -21,7 +22,25 @@ function isAllowedOrigin(origin, configuredOrigin) {
   return /^chrome-extension:\/\/[a-p]{32}$/.test(origin);
 }
 
-export function createApp({ maxTextBytes = 10_000, extensionOrigin = "" } = {}) {
+const PROVIDER_ERROR_STATUS = Object.freeze({
+  INVALID_BACKEND_RESPONSE: 502,
+  INVALID_VOICE_REFERENCE: 422,
+  PROVIDER_AUTHENTICATION_FAILURE: 502,
+  PROVIDER_FORBIDDEN: 502,
+  PROVIDER_PAYMENT_REQUIRED: 402,
+  PROVIDER_UNAVAILABLE: 503,
+  PROVIDER_VALIDATION_FAILURE: 502,
+  RATE_LIMIT: 429,
+  REQUEST_CANCELLED: 499,
+  TIMEOUT: 504,
+});
+
+export function createApp(options = {}) {
+  const {
+    maxTextBytes = 10_000,
+    extensionOrigin = "",
+    ttsProvider = createTtsProvider({ mockMode: true }),
+  } = options;
   const app = express();
 
   app.disable("x-powered-by");
@@ -50,10 +69,10 @@ export function createApp({ maxTextBytes = 10_000, extensionOrigin = "" } = {}) 
   app.use(express.json({ limit: Math.max(maxTextBytes * 6 + 1_024, 16_384) }));
 
   app.get("/api/health", (_request, response) => {
-    response.json({ status: "ok", mode: "mock" });
+    response.json({ status: "ok", mode: ttsProvider.mode });
   });
 
-  app.post("/api/tts", (request, response) => {
+  app.post("/api/tts", async (request, response, next) => {
     if (!request.is("application/json")) {
       return sendError(
         response,
@@ -75,17 +94,49 @@ export function createApp({ maxTextBytes = 10_000, extensionOrigin = "" } = {}) 
       );
     }
 
-    const { inputBytes, requestId } = validation.value;
-    const audio = createMockWav();
-    response.set({
-      "Content-Type": "audio/wav",
-      "Cache-Control": "no-store",
-      "X-Request-Id": requestId,
-      "X-Input-Bytes": String(inputBytes),
-      "X-Estimated-Cost-Microusd": "0",
-      "X-Pricing-Mode": "mock",
+    const { inputBytes, requestId, text } = validation.value;
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    request.once("aborted", cancel);
+    response.once("close", () => {
+      if (!response.writableEnded) {
+        cancel();
+      }
     });
-    return response.send(audio);
+
+    try {
+      const result = await ttsProvider.synthesize({
+        text,
+        inputBytes,
+        requestId,
+        signal: controller.signal,
+      });
+      response.set({
+        "Content-Type": result.contentType,
+        "Cache-Control": "no-store",
+        "X-Request-Id": requestId,
+        "X-Input-Bytes": String(inputBytes),
+        "X-Estimated-Cost-Microusd": String(result.estimatedCostMicrousd),
+        "X-Pricing-Mode": result.pricingMode,
+      });
+      return response.send(result.audio);
+    } catch (error) {
+      if (error instanceof FishAudioClientError) {
+        if (error.code === "REQUEST_CANCELLED" && response.destroyed) {
+          return undefined;
+        }
+        return sendError(
+          response,
+          PROVIDER_ERROR_STATUS[error.code] || 502,
+          error.code,
+          error.message,
+          requestId,
+        );
+      }
+      return next(error);
+    } finally {
+      request.removeListener("aborted", cancel);
+    }
   });
 
   app.use((error, _request, response, _next) => {
@@ -95,7 +146,12 @@ export function createApp({ maxTextBytes = 10_000, extensionOrigin = "" } = {}) 
     if (error instanceof SyntaxError) {
       return sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
     }
-    return sendError(response, 500, "UNKNOWN_FAILURE", "The mock server could not complete the request.");
+    return sendError(
+      response,
+      500,
+      "UNKNOWN_FAILURE",
+      "The local speech server could not complete the request.",
+    );
   });
 
   return app;
