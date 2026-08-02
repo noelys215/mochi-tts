@@ -21,7 +21,10 @@ test("health endpoint reports mock mode", async () => {
   await withServer({}, async (baseUrl) => {
     const response = await fetch(`${baseUrl}/api/health`);
     assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), { status: "ok", mode: "mock" });
+    assert.deepEqual(await response.json(), {
+      status: "ok", mode: "mock", model: "mock",
+      pricePerMillionBytes: 0, maxInputBytes: 10_000,
+    });
   });
 });
 
@@ -40,6 +43,7 @@ test("TTS endpoint returns mock audio and safe usage headers", async () => {
     assert.equal(response.headers.get("x-input-bytes"), "11");
     assert.equal(response.headers.get("x-estimated-cost-microusd"), "0");
     assert.equal(response.headers.get("x-pricing-mode"), "mock");
+    assert.equal(response.headers.get("x-model"), "mock");
     assert.equal(audio.subarray(0, 4).toString(), "RIFF");
   });
 });
@@ -90,6 +94,8 @@ test("TTS endpoint safely rejects invalid input", async () => {
 test("TTS endpoint returns configured provider audio and usage", async () => {
   const ttsProvider = {
     mode: "fish",
+    model: "fish-model",
+    pricePerMillionBytes: 15,
     async synthesize({ inputBytes }) {
       return {
         audio: Buffer.from([73, 68, 51]),
@@ -102,7 +108,10 @@ test("TTS endpoint returns configured provider audio and usage", async () => {
 
   await withServer({ ttsProvider }, async (baseUrl) => {
     const health = await fetch(`${baseUrl}/api/health`);
-    assert.deepEqual(await health.json(), { status: "ok", mode: "fish" });
+    assert.deepEqual(await health.json(), {
+      status: "ok", mode: "fish", model: "fish-model",
+      pricePerMillionBytes: 15, maxInputBytes: 10_000,
+    });
 
     const response = await fetch(`${baseUrl}/api/tts`, {
       method: "POST",

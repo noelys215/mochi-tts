@@ -9,6 +9,8 @@ export function createTtsProvider(config, dependencies = {}) {
   if (config.mockMode) {
     return {
       mode: "mock",
+      model: "mock",
+      pricePerMillionBytes: 0,
       async synthesize() {
         return {
           audio: createMockWav(),
@@ -23,6 +25,8 @@ export function createTtsProvider(config, dependencies = {}) {
   const client = createFishAudioClient(config.fishAudio, dependencies);
   return {
     mode: "fish",
+    model: config.fishAudio.model,
+    pricePerMillionBytes: config.fishAudio.pricePerMillionBytes,
     async synthesize({ text, inputBytes, signal }) {
       const result = await client.synthesize({ text, signal });
       return {

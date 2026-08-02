@@ -54,7 +54,7 @@ export function createApp(options = {}) {
       response.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
       response.set(
         "Access-Control-Expose-Headers",
-        "X-Request-Id, X-Input-Bytes, X-Estimated-Cost-Microusd, X-Pricing-Mode",
+        "X-Request-Id, X-Input-Bytes, X-Estimated-Cost-Microusd, X-Pricing-Mode, X-Model",
       );
     }
 
@@ -69,7 +69,13 @@ export function createApp(options = {}) {
   app.use(express.json({ limit: Math.max(maxTextBytes * 6 + 1_024, 16_384) }));
 
   app.get("/api/health", (_request, response) => {
-    response.json({ status: "ok", mode: ttsProvider.mode });
+    response.json({
+      status: "ok",
+      mode: ttsProvider.mode,
+      model: ttsProvider.model || "unknown",
+      pricePerMillionBytes: Number(ttsProvider.pricePerMillionBytes) || 0,
+      maxInputBytes: maxTextBytes,
+    });
   });
 
   app.post("/api/tts", async (request, response, next) => {
@@ -118,6 +124,7 @@ export function createApp(options = {}) {
         "X-Input-Bytes": String(inputBytes),
         "X-Estimated-Cost-Microusd": String(result.estimatedCostMicrousd),
         "X-Pricing-Mode": result.pricingMode,
+        "X-Model": ttsProvider.model || "unknown",
       });
       return response.send(result.audio);
     } catch (error) {
