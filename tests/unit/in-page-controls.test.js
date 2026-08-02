@@ -16,6 +16,7 @@ const documentObject = {
 function element(tag, text = "", children = [], options = {}) {
   const node = {
     tag, ownText: text, children, parent: null, hidden: Boolean(options.hidden),
+    isConnected: options.connected !== false,
     ownerDocument: documentObject,
     get tagName() { return tag.toUpperCase(); },
     get textContent() { return [this.ownText, ...this.children.map((child) => child.textContent)].join(" "); },
@@ -75,6 +76,24 @@ test("leaf text-heavy divs qualify while ignored and link-heavy regions do not",
   assert.equal(targets.qualifiesParagraph(linked, 20), false);
 });
 
+test("prose-heavy list items and blockquotes qualify after paragraph priority", () => {
+  const listItem = element("li", "A prose-heavy list item explains one complete and meaningful lesson detail.");
+  const quote = element("blockquote", "A standalone quotation contains enough readable prose for direct playback.");
+  const paragraph = element("p", "A nested paragraph remains the smallest meaningful readable passage.");
+  const wrappedQuote = element("blockquote", "", [paragraph]);
+  const root = element("div", "", [listItem, quote, wrappedQuote]);
+  assert.deepEqual([...targets.selectPassageTargets(root, 30)], [paragraph, listItem, quote]);
+});
+
+test("article and main elements never become normal passage targets", () => {
+  assert.deepEqual([...targets.selectPassageTargets(
+    element("article", "Direct article prose is reserved for the page-reading action."), 20,
+  )], []);
+  assert.deepEqual([...targets.selectPassageTargets(
+    element("main", "Direct main prose is reserved for the page-reading action."), 20,
+  )], []);
+});
+
 test("one suitable article is selected for whole-page reading", () => {
   const short = element("article", "brief");
   const long = element("article", "A complete article has enough meaningful prose to support page reading.");
@@ -84,6 +103,35 @@ test("one suitable article is selected for whole-page reading", () => {
     body: null,
   };
   assert.equal(targets.findPageTarget(fakeDocument, 30), long);
+});
+
+test("whole-page detection falls back from article to main and extractor root", () => {
+  const main = element("main", "A suitable main region contains enough readable prose for page playback.");
+  const mainDocument = {
+    querySelectorAll: () => [],
+    querySelector: (selector) => selector === "main" ? main : null,
+    body: null,
+  };
+  assert.equal(targets.findPageTarget(mainDocument, 30), main);
+
+  const body = element("body", "Fallback body prose remains available through the shared article extractor.");
+  const bodyDocument = { querySelectorAll: () => [], querySelector: () => null, body };
+  targetContext.__mochiAudioArticleExtractor = {
+    findRoot: () => body,
+    extractFromRoot: (root) => root.textContent,
+  };
+  assert.equal(targets.findPageTarget(bodyDocument, 30), body);
+});
+
+test("overlay positions clamp to viewport gutters and cleanup drops disconnected targets", () => {
+  const position = targets.overlayPosition(
+    { top: -4, right: 1010, bottom: 40, width: 120, height: 44 },
+    32, 32, 1000, 700,
+  );
+  assert.deepEqual({ ...position }, { left: 960, top: 8 });
+  const connected = element("p", "connected");
+  const removed = element("p", "removed", [], { connected: false });
+  assert.deepEqual([...targets.connectedTargets([connected, removed])], [connected]);
 });
 
 const playerSource = await readFile(new URL("../../extension/content/in-page-player-state.js", import.meta.url), "utf8");

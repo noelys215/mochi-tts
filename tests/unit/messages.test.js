@@ -20,6 +20,8 @@ function passage(overrides = {}) {
 
 test("validates in-page request identity, source, element, URL, and UTF-8 size", () => {
   assert.equal(validateInPageReadMessage(passage()), null);
+  assert.equal(validateInPageReadMessage(passage({ elementType: "li" })), null);
+  assert.equal(validateInPageReadMessage(passage({ elementType: "blockquote" })), null);
   assert.match(validateInPageReadMessage(passage({ source: "page-owned" })), /source/);
   assert.match(validateInPageReadMessage(passage({ elementType: "button" })), /element/);
   assert.match(validateInPageReadMessage(passage({ pageUrl: "javascript:alert(1)" })), /URL/);

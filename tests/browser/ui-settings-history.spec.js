@@ -66,14 +66,37 @@ test("options persist all reader defaults without a credential field", async () 
   await page.close();
 });
 
-test("popup exposes labeled status and keyboard focus", async () => {
+test("popup is a compact controller with usage and advanced-page navigation", async () => {
   const page = await extensionPage("popup/popup.html");
-  await expect(page.locator("#backend-status")).toContainText("connected");
   await expect(page.locator("#budget-status")).toContainText("custom");
+  await expect(page.locator("#usage-today")).toBeVisible();
+  await expect(page.locator("#usage-month")).toBeVisible();
+  await expect(page.locator("#playback-toggle")).toHaveCount(1);
+  await expect(page.locator('[data-playback="PLAYBACK_PLAY"], [data-playback="PLAYBACK_PAUSE"], [data-playback="PLAYBACK_RESUME"]')).toHaveCount(0);
+  await expect(page.locator("#export-usage,#reset-usage,#recent-history,#custom-price,#monthly-limit,#warning-threshold,#hard-stop")).toHaveCount(0);
+  await expect(page.locator("#override-once")).toBeHidden();
+  await expect(page.getByRole("button", { name: "Settings" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "History" })).toBeVisible();
   await page.keyboard.press("Tab");
   await expect(page.locator(":focus")).toBeVisible();
   await expect(page.locator("#status")).toHaveAttribute("aria-live", "polite");
   await page.close();
+});
+
+test("popup Settings and History controls open their dedicated pages", async () => {
+  const page = await extensionPage("popup/popup.html");
+  const optionsOpened = context.waitForEvent("page");
+  await page.getByRole("button", { name: "Settings" }).click();
+  const options = await optionsOpened;
+  await options.waitForLoadState();
+  expect(options.url()).toContain("options/options.html");
+
+  const historyOpened = context.waitForEvent("page");
+  await page.getByRole("button", { name: "History" }).click();
+  const history = await historyOpened;
+  await history.waitForLoadState();
+  expect(history.url()).toContain("history/history.html");
+  await Promise.all([page.close(), options.close(), history.close()]);
 });
 
 test("history lists metadata, excludes text, exports, and resets with confirmation", async () => {

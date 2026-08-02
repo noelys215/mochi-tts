@@ -112,11 +112,15 @@ test("popup previews editable normalized text and waits for confirmation", async
   await page.bringToFront();
   const popup = await context.newPage();
   await popup.goto(`chrome-extension://${extensionId}/popup/popup.html`);
+  await popup.evaluate(() => chrome.runtime.sendMessage({
+    type: "USAGE_SETTINGS_UPDATE", payload: { dsaNormalization: true },
+  }));
+  await popup.reload();
+  await expect(popup.locator("#status")).toContainText(/backend ready/i);
   await page.bringToFront();
   await popup.locator("#read-article").click();
   await expect(popup.locator("#article-preview")).toBeVisible();
   expect(generatedTexts).toHaveLength(0);
-  await popup.locator("#normalize-dsa").check();
   await expect(popup.locator("#article-speech")).toHaveValue(/big O of log n/);
   await popup.locator("#article-speech").fill("Edited speech preview.");
   expect(generatedTexts).toHaveLength(0);
