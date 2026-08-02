@@ -102,7 +102,11 @@ async function injectHoverReader(page) {
   await serviceWorker.evaluate(async (id) => {
     await chrome.scripting.executeScript({
       target: { tabId: id },
-      files: ["content/hover-target.js", "content/hover-reader.js"],
+      files: [
+        "content/article-extractor.js",
+        "content/hover-target.js",
+        "content/hover-reader.js",
+      ],
     });
   }, tabId);
   return tabId;
@@ -192,6 +196,23 @@ test("clicking reads only the chosen visible passage", async () => {
   expect(generatedTexts[0]).toBe(
     "Paragraph passage explains coral ecosystems in useful detail. Focus here.",
   );
+});
+
+test("hovered articles reuse cleaning and require confirmation", async () => {
+  const page = await fixturePage();
+  await enableHover(page);
+  await page.locator("#article-only").hover();
+  const button = page.locator(hoverButton);
+  await expect(button).toHaveText("Preview article");
+  await button.click();
+  await expect(button).toHaveText("Confirm article");
+  expect(generatedTexts).toHaveLength(0);
+  await button.click();
+
+  await expect.poll(() => generatedTexts.length).toBe(1);
+  expect(generatedTexts[0]).toContain("Paragraph passage explains coral ecosystems");
+  expect(generatedTexts[0]).not.toContain("Hidden words");
+  expect(generatedTexts[0]).not.toContain("ignored_code");
 });
 
 test("Escape removes hover UI and disables the mode", async () => {

@@ -1,8 +1,10 @@
 import { createQueueManager } from "./queue-manager.js";
 import { requestAudio, requestBackendMetadata } from "../shared/backend-client.js";
-import { evaluateBudget } from "../shared/budget.js";
+import { evaluateBudget, priceForMode } from "../shared/budget.js";
+import { chunkText } from "../shared/chunking.js";
 import {
   MESSAGE_TYPES,
+  validateArticleReadMessage,
   validateHoverPassageReadMessage,
   validateSelectionReadMessage,
 } from "../shared/messages.js";
@@ -13,6 +15,7 @@ import {
   aggregateUsage,
   byteLength,
   exportUsage,
+  estimateCostMicrousd,
   mergeUsageSettings,
 } from "../shared/usage.js";
 
@@ -174,21 +177,49 @@ const queueHandlers = {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const isSelection = message?.type === MESSAGE_TYPES.SELECTION_READ_REQUEST;
   const isHover = message?.type === MESSAGE_TYPES.HOVER_PASSAGE_READ;
-  if (isSelection || isHover) {
+  const isArticle = message?.type === MESSAGE_TYPES.ARTICLE_READ_REQUEST;
+  if (isSelection || isHover || isArticle) {
     if (isHover && !sender.tab?.id) {
       sendResponse({ ok: false, error: "Invalid hover request source." });
       return false;
     }
     const error = isHover
       ? validateHoverPassageReadMessage(message)
-      : validateSelectionReadMessage(message);
+      : isArticle
+        ? validateArticleReadMessage(message)
+        : validateSelectionReadMessage(message);
     if (error) {
       sendResponse({ ok: false, error });
       return false;
     }
-    readAndPlay(message.payload, isHover ? "hover" : "selection")
+    const source = isArticle || (isHover && message.payload.source === "article")
+      ? "article"
+      : isHover ? "hover" : "selection";
+    readAndPlay(message.payload, source)
       .then(({ usage }) => sendResponse({ ok: true, usage }))
       .catch((failure) => sendResponse({ ok: false, error: failure.message }));
+    return true;
+  }
+
+  if (message?.type === MESSAGE_TYPES.ARTICLE_PREVIEW_ESTIMATE_REQUEST) {
+    const text = message.payload?.text;
+    if (typeof text !== "string" || !text.trim()) {
+      sendResponse({ ok: false, error: "No article text is available." });
+      return false;
+    }
+    Promise.all([requestBackendMetadata(), storageState()]).then(([backend, local]) => {
+      const inputBytes = byteLength(text);
+      const price = priceForMode(local.settings, backend);
+      sendResponse({
+        ok: true,
+        estimate: {
+          inputBytes,
+          chunks: chunkText(text, backend.maxInputBytes).length,
+          estimatedCostMicrousd: estimateCostMicrousd(inputBytes, price),
+          durationSeconds: Math.max(1, Math.round(text.trim().split(/\s+/u).length / 2.5)),
+        },
+      });
+    }).catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
 

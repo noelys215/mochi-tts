@@ -1,11 +1,18 @@
 import { MESSAGE_TYPES } from "../shared/messages.js";
+import { speechText } from "../shared/dsa-normalizer.js";
 
 const readButton = document.querySelector("#read-selection");
 const hoverToggle = document.querySelector("#hover-toggle");
+const articleButton = document.querySelector("#read-article");
+const articlePreview = document.querySelector("#article-preview");
+const articleSpeech = document.querySelector("#article-speech");
 const playbackRate = document.querySelector("#playback-rate");
 const status = document.querySelector("#status");
 const HOVER_MINIMUM_LENGTH = 40;
 let hoverEnabled = false;
+let articleOriginalText = "";
+let articleTabId = null;
+let estimateTimer;
 
 function formatUsage(value) {
   return `${value.inputBytes.toLocaleString()} bytes · $${(value.estimatedCostMicrousd / 1_000_000).toFixed(6)}`;
@@ -54,6 +61,61 @@ async function extractSelection(tabId) {
   }
 }
 
+async function extractArticle(tabId, codeMode) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["content/article-extractor.js"],
+    });
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (mode) => globalThis.__fishStudyReaderArticleExtractor.extractArticle({ codeMode: mode }),
+      args: [codeMode],
+    });
+    return results[0]?.result?.text || "";
+  } catch {
+    throw new Error("This page does not allow article extraction.");
+  }
+}
+
+function formatDuration(seconds) {
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+async function updateArticleEstimate() {
+  const text = articleSpeech.value.trim();
+  if (!text) {
+    document.querySelector("#article-estimate").textContent = "No speech text to read.";
+    return;
+  }
+  const response = await chrome.runtime.sendMessage({
+    type: MESSAGE_TYPES.ARTICLE_PREVIEW_ESTIMATE_REQUEST,
+    payload: { text },
+  });
+  document.querySelector("#article-estimate").textContent = response?.ok
+    ? `${response.estimate.inputBytes.toLocaleString()} UTF-8 bytes · ${response.estimate.chunks} chunk(s) · $${(response.estimate.estimatedCostMicrousd / 1_000_000).toFixed(6)} · about ${formatDuration(response.estimate.durationSeconds)}`
+    : response?.error || "Estimate unavailable.";
+}
+
+function renderArticleSpeech() {
+  articleSpeech.value = speechText(
+    articleOriginalText,
+    document.querySelector("#normalize-dsa").checked,
+  );
+  updateArticleEstimate();
+}
+
+async function refreshArticleExtraction() {
+  articleOriginalText = await extractArticle(
+    articleTabId,
+    document.querySelector("#article-code-mode").value,
+  );
+  if (!articleOriginalText) throw new Error("No readable article prose was found.");
+  document.querySelector("#article-original").textContent = articleOriginalText;
+  renderArticleSpeech();
+}
+
 function updateHoverControl(enabled) {
   hoverEnabled = enabled;
   hoverToggle.setAttribute("aria-pressed", String(enabled));
@@ -67,7 +129,11 @@ async function sendTabMessage(tabId, message) {
 async function injectHoverReader(tabId) {
   await chrome.scripting.executeScript({
     target: { tabId },
-    files: ["content/hover-target.js", "content/hover-reader.js"],
+    files: [
+      "content/article-extractor.js",
+      "content/hover-target.js",
+      "content/hover-reader.js",
+    ],
   });
 }
 
@@ -131,6 +197,59 @@ readButton.addEventListener("click", async () => {
     setStatus(error.message || "The selection could not be read.");
   } finally {
     readButton.disabled = false;
+  }
+});
+
+articleButton.addEventListener("click", async () => {
+  articleButton.disabled = true;
+  setStatus("Extracting article…");
+  try {
+    articleTabId = (await getActiveTab()).id;
+    await refreshArticleExtraction();
+    articlePreview.hidden = false;
+    setStatus("Review and edit the preview before confirming.");
+  } catch (error) {
+    articlePreview.hidden = true;
+    setStatus(error.message || "The article could not be extracted.");
+  } finally {
+    articleButton.disabled = false;
+  }
+});
+
+document.querySelector("#article-code-mode").addEventListener("change", async () => {
+  try { await refreshArticleExtraction(); } catch (error) { setStatus(error.message); }
+});
+
+document.querySelector("#normalize-dsa").addEventListener("change", renderArticleSpeech);
+
+articleSpeech.addEventListener("input", () => {
+  clearTimeout(estimateTimer);
+  estimateTimer = setTimeout(updateArticleEstimate, 150);
+});
+
+document.querySelector("#cancel-article").addEventListener("click", () => {
+  articlePreview.hidden = true;
+  articleOriginalText = "";
+  setStatus("Article preview cancelled.");
+});
+
+document.querySelector("#confirm-article").addEventListener("click", async () => {
+  const button = document.querySelector("#confirm-article");
+  button.disabled = true;
+  setStatus("Generating article audio…");
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: MESSAGE_TYPES.ARTICLE_READ_REQUEST,
+      payload: { text: articleSpeech.value, requestId: crypto.randomUUID() },
+    });
+    if (!response?.ok) throw new Error(response?.error || "The article could not be read.");
+    articlePreview.hidden = true;
+    setStatus("Playing article.");
+    await refreshUsage();
+  } catch (error) {
+    setStatus(error.message || "The article could not be read.");
+  } finally {
+    button.disabled = false;
   }
 });
 

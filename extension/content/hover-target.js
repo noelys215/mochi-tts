@@ -40,6 +40,10 @@
   }
 
   function getVisibleText(element) {
+    const extractor = globalThis.__fishStudyReaderArticleExtractor;
+    if (extractor) {
+      return extractor.extractFromRoot(element, { codeMode: "skip" });
+    }
     const documentObject = element?.ownerDocument;
     if (!documentObject?.createTreeWalker) {
       return normalizeText(element?.textContent);

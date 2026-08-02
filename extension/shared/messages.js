@@ -4,6 +4,8 @@ export const MESSAGE_TYPES = Object.freeze({
   HOVER_MODE_DISABLE: "HOVER_MODE_DISABLE",
   HOVER_MODE_STATUS_REQUEST: "HOVER_MODE_STATUS_REQUEST",
   HOVER_PASSAGE_READ: "HOVER_PASSAGE_READ",
+  ARTICLE_READ_REQUEST: "ARTICLE_READ_REQUEST",
+  ARTICLE_PREVIEW_ESTIMATE_REQUEST: "ARTICLE_PREVIEW_ESTIMATE_REQUEST",
   PLAYBACK_LOAD: "PLAYBACK_LOAD",
   PLAYBACK_PLAY: "PLAYBACK_PLAY",
   PLAYBACK_PAUSE: "PLAYBACK_PAUSE",
@@ -58,4 +60,8 @@ export function validateSelectionReadMessage(message) {
 
 export function validateHoverPassageReadMessage(message) {
   return validateReadMessage(message, MESSAGE_TYPES.HOVER_PASSAGE_READ);
+}
+
+export function validateArticleReadMessage(message) {
+  return validateReadMessage(message, MESSAGE_TYPES.ARTICLE_READ_REQUEST);
 }

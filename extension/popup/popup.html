@@ -11,9 +11,35 @@
       <h1>Fish Study Reader</h1>
       <p>Select text on the page, then read it through your local speech server.</p>
       <button id="read-selection" type="button">Read selection</button>
+      <button id="read-article" type="button">Read article</button>
       <button id="hover-toggle" type="button" aria-pressed="false">
         Enable hover mode
       </button>
+      <section id="article-preview" aria-labelledby="article-heading" hidden>
+        <h2 id="article-heading">Article preview</h2>
+        <label>Code handling
+          <select id="article-code-mode">
+            <option value="skip">Skip code</option>
+            <option value="comments">Read comments only</option>
+            <option value="literal">Read code literally</option>
+          </select>
+        </label>
+        <label class="checkbox">
+          <input id="normalize-dsa" type="checkbox"> Normalize DSA notation
+        </label>
+        <details>
+          <summary>Original extracted text</summary>
+          <pre id="article-original"></pre>
+        </details>
+        <label>Speech text
+          <textarea id="article-speech" rows="9"></textarea>
+        </label>
+        <p id="article-estimate" class="fine-print">Calculating estimate…</p>
+        <div class="utility-controls">
+          <button id="confirm-article" type="button">Confirm and read</button>
+          <button id="cancel-article" type="button">Cancel</button>
+        </div>
+      </section>
       <section aria-labelledby="playback-heading">
         <h2 id="playback-heading">Playback</h2>
         <div class="transport-controls">

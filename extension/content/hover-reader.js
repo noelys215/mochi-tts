@@ -14,6 +14,7 @@
     button: null,
     style: null,
     hideTimer: null,
+    articleArmed: false,
   };
 
   function clearHideTimer() {
@@ -26,6 +27,7 @@
   function removeHighlight() {
     state.currentTarget?.classList.remove(HIGHLIGHT_CLASS);
     state.currentTarget = null;
+    state.articleArmed = false;
   }
 
   function hideUi() {
@@ -69,7 +71,7 @@
       target.classList.add(HIGHLIGHT_CLASS);
     }
     state.button.hidden = false;
-    state.button.textContent = "Read passage";
+    state.button.textContent = target.matches("article") ? "Preview article" : "Read passage";
     state.button.disabled = false;
     positionButton();
   }
@@ -107,6 +109,12 @@
     event.preventDefault();
     event.stopPropagation();
     clearHideTimer();
+    const isArticle = state.currentTarget?.matches("article");
+    if (isArticle && !state.articleArmed) {
+      state.articleArmed = true;
+      state.button.textContent = "Confirm article";
+      return;
+    }
     const text = api.getVisibleText(state.currentTarget);
     if (!text) {
       hideUi();
@@ -117,7 +125,11 @@
     try {
       const response = await chrome.runtime.sendMessage({
         type: "HOVER_PASSAGE_READ",
-        payload: { text, requestId: crypto.randomUUID() },
+        payload: {
+          text,
+          requestId: crypto.randomUUID(),
+          source: isArticle ? "article" : "hover",
+        },
       });
       state.button.textContent = response?.ok ? "Playing" : "Try again";
     } catch {

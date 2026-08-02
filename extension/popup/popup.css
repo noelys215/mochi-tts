@@ -45,6 +45,8 @@ button {
   background: #315c57;
 }
 
+#read-article { margin-top: 8px; }
+
 .transport-controls {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -86,6 +88,26 @@ input {
   border: 1px solid #83a6a1;
   border-radius: 6px;
   padding: 6px;
+}
+
+textarea {
+  box-sizing: border-box;
+  width: 100%;
+  resize: vertical;
+  border: 1px solid #83a6a1;
+  border-radius: 6px;
+  padding: 7px;
+  color: inherit;
+  font: inherit;
+}
+
+details { margin: 8px 0; font-size: 0.8rem; }
+
+pre {
+  max-height: 120px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font: 0.75rem/1.35 system-ui, sans-serif;
 }
 
 label.checkbox {
