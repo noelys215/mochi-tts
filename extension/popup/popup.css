@@ -46,6 +46,10 @@ button {
 
 button:hover { background: var(--color-primary-hover); }
 button:disabled { cursor: wait; opacity: 0.6; }
+.generation-status { display:flex;align-items:center;gap:7px;margin:6px 0;color:var(--color-text-muted);font-size:.78rem; }
+.generation-status .spinner { display:inline-block;animation:mochi-audio-spin .8s linear infinite; }
+.generation-status button { margin-left:auto;min-height:30px;padding:5px 9px; }
+@keyframes mochi-audio-spin { to { transform:rotate(360deg); } }
 
 .two-column,
 .toggle-list,
@@ -152,4 +156,5 @@ textarea:focus-visible {
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+  .generation-status .spinner { animation: none !important; }
 }

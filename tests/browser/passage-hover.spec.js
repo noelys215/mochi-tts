@@ -17,6 +17,8 @@ let serviceWorker;
 let server;
 let extensionId;
 let generatedTexts;
+let delayGeneration;
+let abortedGenerations;
 
 const leetCodeFixture = `<!doctype html><html lang="en"><head><title>Sliding window</title></head><body>
   <nav>Lesson navigation should never be spoken.</nav>
@@ -38,12 +40,23 @@ const leetCodeFixture = `<!doctype html><html lang="en"><head><title>Sliding win
 
 test.beforeAll(async () => {
   generatedTexts = [];
+  delayGeneration = false;
+  abortedGenerations = 0;
   const mock = createTtsProvider({ mockMode: true });
   const app = createApp({
     ttsProvider: {
       ...mock,
       async synthesize(request) {
         generatedTexts.push(request.text);
+        if (delayGeneration) {
+          await new Promise((resolve, reject) => {
+            if (request.signal.aborted) return reject(new DOMException("Cancelled", "AbortError"));
+            request.signal.addEventListener("abort", () => {
+              abortedGenerations += 1;
+              reject(new DOMException("Cancelled", "AbortError"));
+            }, { once: true });
+          });
+        }
         return mock.synthesize(request);
       },
     },
@@ -73,7 +86,7 @@ test.afterAll(async () => {
   if (server) await once(server, "close");
 });
 
-test.beforeEach(() => { generatedTexts.length = 0; });
+test.beforeEach(() => { generatedTexts.length = 0; delayGeneration = false; abortedGenerations = 0; });
 test.afterEach(async () => {
   await serviceWorker.evaluate(() => chrome.runtime.sendMessage({ type: "PLAYBACK_SESSION_STOP" })).catch(() => {});
   await Promise.all(context.pages().filter((page) => page.url() !== "about:blank").map((page) => page.close()));
@@ -146,6 +159,33 @@ test("unified controls are opt-in and reuse one hover passage button", async () 
   await button.click();
   await expect.poll(() => generatedTexts.length).toBe(1);
   expect(generatedTexts[0]).toContain("Healthy reefs reduce wave energy");
+  await popup.close();
+});
+
+test("generation feedback prevents duplicate clicks and Cancel restores controls without usage", async () => {
+  delayGeneration = true;
+  const page = await genericPage();
+  const popup = await enable(page);
+  const before = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "USAGE_STATE_REQUEST" }));
+  await page.locator("#first").hover();
+  const button = page.locator(passageButton);
+  await button.click();
+  await expect(button).toHaveAttribute("aria-busy", "true");
+  await expect(button).toBeDisabled();
+  await expect(button).toHaveAttribute("aria-label", "Generating passage audio");
+  await expect(page.locator(`${player} [data-generation-text]`)).toHaveText("Generating audio…");
+  await expect(page.locator(pageButton)).toBeDisabled();
+
+  await button.evaluate((node) => { node.click(); node.click(); });
+  await expect.poll(() => generatedTexts.length).toBe(1);
+  await page.locator(`${player} [data-action="cancel-generation"]`).click();
+  await expect.poll(() => abortedGenerations).toBe(1);
+  await expect(page.locator(player)).toHaveCount(0);
+  await page.locator("#first").hover();
+  await expect(button).toBeEnabled();
+  await expect(button).toHaveAttribute("aria-busy", "false");
+  const after = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "USAGE_STATE_REQUEST" }));
+  expect(after.state.records).toHaveLength(before.state.records.length);
   await popup.close();
 });
 

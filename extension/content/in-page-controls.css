@@ -49,6 +49,10 @@
   outline-offset: 2px;
 }
 .mochi-audio-passage-button[aria-busy="true"] { cursor: wait; opacity: .75; }
+.mochi-audio-passage-button[aria-busy="true"] { animation: mochi-audio-spin .8s linear infinite; }
+.mochi-audio-page-button[aria-busy="true"] { cursor: wait; opacity: .75; }
+.mochi-audio-spinner { display: inline-block; animation: mochi-audio-spin .8s linear infinite; }
+@keyframes mochi-audio-spin { to { transform: rotate(360deg); } }
 .mochi-audio-passage-button[data-state="active"] { background: var(--mochi-active); }
 .mochi-audio-passage-button[data-state="error"] { border-color: #b42318; color: #b42318; }
 .mochi-audio-hover-target-active {
@@ -85,4 +89,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   #mochi-audio-in-page-overlay * { scroll-behavior: auto !important; transition: none !important; }
+  #mochi-audio-in-page-overlay .mochi-audio-spinner,
+  #mochi-audio-in-page-overlay .mochi-audio-passage-button { animation: none !important; }
 }

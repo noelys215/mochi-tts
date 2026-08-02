@@ -47,6 +47,11 @@
 
       <section aria-labelledby="playback-heading">
         <h2 id="playback-heading">Playback</h2>
+        <div id="generation-status" class="generation-status" role="status" aria-live="polite" hidden>
+          <span class="spinner" aria-hidden="true">◌</span>
+          <span id="generation-status-text">Preparing audio…</span>
+          <button id="cancel-generation" type="button">Cancel</button>
+        </div>
         <p id="other-playback-status" class="fine-print" hidden>Audio is playing in another tab.</p>
         <button id="stop-other-playback" type="button" hidden>Stop other playback</button>
         <div id="playback-owner-controls">

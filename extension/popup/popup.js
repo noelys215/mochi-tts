@@ -16,6 +16,7 @@ let passageHoverEnabled = false;
 let appSettings;
 let articleOriginalText = "";
 let articleTabId = null;
+let articleGenerationId = null;
 let estimateTimer;
 let playbackState = {
   status: "idle", requestId: null, currentTime: 0, duration: 0, playbackRate: 1,
@@ -57,6 +58,17 @@ function renderPlayback(view) {
   const next = view.playback || view;
   playbackView = view.playback ? view : { session: { ownsPlayback: true, otherTabActive: false }, playback: next };
   playbackState = next;
+  const generation = playbackView.generation || { status: "idle" };
+  const generating = ["validating", "generating", "buffering"].includes(generation.status);
+  const generationBlocking = generating || generation.status === "awaiting-confirmation";
+  const generationStatus = document.querySelector("#generation-status");
+  generationStatus.hidden = !generating;
+  document.querySelector("#generation-status-text").textContent = generation.otherTabGenerating
+    ? "Audio is being prepared in another tab"
+    : `Preparing ${generation.sourceType === "page" ? "page" : generation.sourceType === "selection" ? "selected text" : "passage"} audio…`;
+  document.querySelector("#cancel-generation").textContent = generation.otherTabGenerating ? "Cancel other request" : "Cancel";
+  readButton.disabled = generationBlocking;
+  articleButton.disabled = generationBlocking;
   const otherTabActive = playbackView.session?.otherTabActive === true;
   document.querySelector("#playback-owner-controls").hidden = otherTabActive;
   document.querySelector("#other-playback-status").hidden = !otherTabActive;
@@ -72,6 +84,8 @@ function renderPlayback(view) {
   playbackProgress.max = String(duration);
   playbackProgress.value = String(currentTime);
   playbackProgress.disabled = duration <= 0;
+  playbackToggle.disabled = generating && next.status === "idle";
+  document.querySelectorAll("[data-queue]").forEach((button) => { button.disabled = generating; });
   document.querySelector("#playback-time").textContent = `${formatTime(currentTime)} / ${duration ? formatTime(duration) : "0:00"}`;
   playbackRate.value = String(next.playbackRate || appSettings?.defaultPlaybackSpeed || 1);
 }
@@ -214,14 +228,29 @@ articleButton.addEventListener("click", async () => {
   articleButton.disabled = true;
   setStatus("Extracting page…");
   try {
-    articleTabId = (await getActiveTab()).id;
+    const tab = await getActiveTab();
+    articleTabId = tab.id;
+    articleGenerationId = crypto.randomUUID();
+    const prepared = await chrome.runtime.sendMessage({
+      type: MESSAGE_TYPES.GENERATION_PREPARE_REQUEST,
+      payload: { requestId: articleGenerationId, sourceType: "page", pageUrl: tab.url },
+    });
+    if (!prepared?.ok) throw new Error(prepared?.error || "Another request is already active.");
     await refreshArticleExtraction();
+    await chrome.runtime.sendMessage({
+      type: MESSAGE_TYPES.GENERATION_AWAIT_CONFIRMATION,
+      payload: { requestId: articleGenerationId, sourceType: "page", pageUrl: tab.url },
+    });
     articlePreview.hidden = false;
     setStatus("Review the extracted text before reading.");
   } catch (error) {
+    if (articleGenerationId) await chrome.runtime.sendMessage({
+      type: MESSAGE_TYPES.GENERATION_CANCEL, payload: { requestId: articleGenerationId },
+    }).catch(() => {});
+    articleGenerationId = null;
     articlePreview.hidden = true;
     setStatus(error.message || "The page could not be extracted.", "error");
-  } finally { articleButton.disabled = false; }
+  } finally { await refreshPlayback(); }
 });
 
 articleSpeech.addEventListener("input", () => {
@@ -229,10 +258,28 @@ articleSpeech.addEventListener("input", () => {
   estimateTimer = setTimeout(updateArticleEstimate, 150);
 });
 
-document.querySelector("#cancel-article").addEventListener("click", () => {
+document.querySelector("#cancel-article").addEventListener("click", async () => {
   articlePreview.hidden = true;
   articleOriginalText = "";
+  if (articleGenerationId) await chrome.runtime.sendMessage({
+    type: MESSAGE_TYPES.GENERATION_CANCEL, payload: { requestId: articleGenerationId },
+  }).catch(() => {});
+  articleGenerationId = null;
   setStatus("Page preview cancelled.");
+});
+
+document.querySelector("#cancel-generation").addEventListener("click", async () => {
+  const generation = playbackView.generation || {};
+  const response = await chrome.runtime.sendMessage({
+    type: MESSAGE_TYPES.GENERATION_CANCEL,
+    payload: {
+      requestId: generation.requestId || undefined,
+      global: generation.otherTabGenerating === true,
+    },
+  });
+  setStatus(response?.ok ? "Generation cancelled." : response?.error || "Generation could not be cancelled.",
+    response?.ok ? "info" : "error");
+  await refreshPlayback();
 });
 
 document.querySelector("#confirm-article").addEventListener("click", async () => {
@@ -242,10 +289,11 @@ document.querySelector("#confirm-article").addEventListener("click", async () =>
   try {
     const response = await chrome.runtime.sendMessage({
       type: MESSAGE_TYPES.ARTICLE_READ_REQUEST,
-      payload: { text: articleSpeech.value, requestId: crypto.randomUUID() },
+      payload: { text: articleSpeech.value, requestId: articleGenerationId || crypto.randomUUID() },
     });
     if (!response?.ok) throw new Error(response?.error || "The page could not be read.");
     articlePreview.hidden = true;
+    articleGenerationId = null;
     setStatus("Playing page.");
     await refreshUsage();
   } catch (error) {
