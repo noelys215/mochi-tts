@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+node_modules/
+coverage/
+test-results/
+playwright-report/
+*.mp3
+*.wav
+*.ogg
+*.webm
+tmp/
+temp/
+.DS_Store
