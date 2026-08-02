@@ -36,10 +36,12 @@
     playerHost: null,
     playerState: null,
     hiddenRequestId: null,
+    hiddenGenerationRequestId: null,
     activeRequestId: null,
     activePassageElement: null,
     optimisticRequestId: null,
     pageRequestId: null,
+    announcedPlayerStatus: null,
   };
 
   const send = (message) => chrome.runtime.sendMessage(message);
@@ -359,21 +361,22 @@
     const shadow = host.attachShadow({ mode: "open" });
     const logoUrl = chrome.runtime.getURL("assets/mochi.png");
     shadow.innerHTML = `<style>
-      :host{all:initial}.player{box-sizing:border-box;display:grid;gap:9px;width:min(720px,calc(100vw - 24px));max-width:100%;padding:10px 12px;border:1px solid #9a7c3e;border-radius:16px;background:#fff8e7;color:#444a50;box-shadow:0 8px 30px #444a5033;font:13px/1.25 ui-rounded,system-ui,sans-serif}.row{min-width:0}.status-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:9px}.identity{display:flex;align-items:center;gap:7px;min-width:0;font-weight:700;color:#9b3154}.logo{width:30px;height:30px;flex:none}.status-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.status-actions,.controls{display:flex;align-items:center;gap:7px;min-width:0}.controls{justify-content:center;flex-wrap:wrap}.progress-row{display:grid;grid-template-columns:minmax(80px,1fr) auto auto;align-items:center;gap:9px}.time,.part{white-space:nowrap;font-variant-numeric:tabular-nums}.part{color:#686f75}.speed{display:flex;align-items:center;gap:5px}button,select,input{font:inherit}button{min-width:36px;min-height:34px;border:1px solid #b9a678;border-radius:9px;background:#fffdf7;color:#3f6f34;cursor:pointer;padding:6px 10px}button.primary{border-color:#3f6f34;background:#3f6f34;color:white;font-weight:700}button.cancel{border-color:#9b3154;background:#9b3154;color:white;font-weight:700}button.quiet{border-color:transparent;background:transparent;color:#686f75}button:disabled{cursor:not-allowed;opacity:.42}button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid #9b3154;outline-offset:2px}.progress{width:100%;min-width:0;accent-color:#3f6f34}.spinner{display:inline-grid;width:18px;height:18px;place-items:center;flex:none;animation:spin .8s linear infinite}.live{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}[hidden]{display:none!important}@keyframes spin{to{transform:rotate(360deg)}}@media(max-width:420px){.player{width:calc(100vw - 16px);padding:9px;gap:8px}.identity-name{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}.status-row{gap:6px}.controls{justify-content:flex-start}.progress-row{grid-template-columns:minmax(0,1fr) auto}.part{grid-column:1/-1;text-align:right}.speed-label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}button{padding-inline:8px}}@media(prefers-reduced-motion:reduce){*{transition:none!important}.spinner{animation:none}}</style>
-      <div class="player" role="region" aria-label="Mochi Audio playback controls" aria-busy="false" data-mode="ready">
-        <div class="row status-row">
-          <div class="identity"><img class="logo" src="${logoUrl}" alt=""><span class="identity-name">Mochi Audio</span></div>
-          <div class="status-text"><span class="spinner" data-spinner aria-hidden="true" hidden>◌</span><span data-player-status>Ready</span></div>
-          <div class="status-actions"><button class="primary" data-action="retry-generation" hidden>Retry</button><button class="cancel" data-action="cancel-generation" hidden>Cancel</button><button class="quiet" data-close aria-label="Close in-page player">×</button></div>
+      :host{all:initial}.player{box-sizing:border-box;display:grid;gap:7px;width:min(620px,calc(100vw - 24px));max-width:100%;padding:8px 12px;border:1px solid #9a7c3e;border-radius:14px;background:#fff8e7;color:#444a50;box-shadow:0 7px 24px #444a5030;font:13px/1.2 ui-rounded,system-ui,sans-serif}.row{min-width:0}.playback-row{display:grid;grid-template-columns:34px 38px minmax(44px,auto) 38px 58px 36px;align-items:center;justify-content:center;gap:7px}.message-row{display:grid;grid-template-columns:34px 18px minmax(0,1fr) auto 36px;align-items:center;gap:8px}.logo{width:32px;height:32px}.message{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:650}.progress-row{display:grid;grid-template-columns:3.5rem minmax(0,1fr) 3.5rem;align-items:center;gap:8px}.time{min-width:3.5rem;white-space:nowrap;font-variant-numeric:tabular-nums}.remaining{text-align:right}.progress{width:100%;min-width:0;accent-color:#3f6f34}.speed{width:58px;height:36px;padding:0 4px;border:1px solid #b9a678;border-radius:9px;background:#fffdf7;color:#3f6f34}button,select,input{box-sizing:border-box;font:inherit}button{width:38px;height:36px;border:1px solid #b9a678;border-radius:9px;background:#fffdf7;color:#3f6f34;cursor:pointer;padding:0}button.primary{width:auto;min-width:48px;padding:0 8px;border-color:#3f6f34;background:#3f6f34;color:white;font-weight:700}button.cancel,button.retry{width:auto;min-width:58px;padding:0 9px;border-color:#9b3154;background:#9b3154;color:white;font-weight:700}button.close{border-color:transparent;background:transparent;color:#686f75}button:disabled{cursor:not-allowed;opacity:.4}button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid #9b3154;outline-offset:2px}.spinner{display:inline-grid;width:18px;height:18px;place-items:center;animation:spin .8s linear infinite}.loading-track,.error-track{height:4px;overflow:hidden;border-radius:999px;background:#ddcfaa}.loading-segment{width:38%;height:100%;border-radius:inherit;background:#3f6f34;animation:travel 1.15s ease-in-out infinite}.error-track{background:linear-gradient(90deg,#9b3154 0 42%,#f2ccd8 42%)}.secondary{min-width:0;text-align:center;color:#686f75;font-size:11px}.live{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}[hidden]{display:none!important}@keyframes spin{to{transform:rotate(360deg)}}@keyframes travel{0%{transform:translateX(-110%)}100%{transform:translateX(265%)}}@media(max-width:420px){.player{width:calc(100vw - 16px);padding:8px;gap:6px}.playback-row{grid-template-columns:32px 36px 42px 36px 52px 34px;gap:4px}.logo{width:30px;height:30px}button{width:36px;height:34px}button.primary{min-width:42px;padding:0}.primary-label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}.speed{width:52px;height:34px}.message-row{grid-template-columns:30px 18px minmax(0,1fr) auto 34px;gap:5px}.progress-row{grid-template-columns:3.2rem minmax(0,1fr) 3.2rem;gap:5px}.time{min-width:3.2rem}}@media(prefers-reduced-motion:reduce){*{transition:none!important}.spinner,.loading-segment{animation:none}.loading-segment{transform:translateX(70%);background:repeating-linear-gradient(135deg,#3f6f34 0 5px,#86a77e 5px 10px)}}</style>
+      <div class="player" role="region" aria-label="Mochi Audio player" aria-busy="false" data-mode="ready">
+        <div class="row playback-row" data-playback-row hidden>
+          <img class="logo" src="${logoUrl}" alt="">
+          <button data-seek="-5" aria-label="Rewind 5 seconds">↺ 5</button>
+          <button class="primary" data-primary data-command="PLAYBACK_PLAY" aria-label="Play audio"><span aria-hidden="true">▶</span><span class="primary-label">Play</span></button>
+          <button data-seek="5" aria-label="Forward 5 seconds">5 ↻</button>
+          <select class="speed" aria-label="Playback speed"><option value="0.75">0.75×</option><option value="1">1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="1.75">1.75×</option><option value="2">2×</option></select>
+          <button class="close" data-close aria-label="Close player">×</button>
         </div>
-        <div class="row controls" data-controls hidden>
-          <button data-previous data-command="QUEUE_PREVIOUS" aria-label="Previous part" hidden>⏮</button>
-          <button class="primary" data-primary data-command="PLAYBACK_PLAY" aria-label="Play audio">▶ <span>Play</span></button>
-          <button data-next data-command="QUEUE_NEXT" aria-label="Next part" hidden>⏭</button>
-          <button data-command="PLAYBACK_STOP" aria-label="Stop audio">■ <span>Stop</span></button>
-          <label class="speed" data-speed hidden><span class="speed-label">Speed</span><select aria-label="Playback speed"><option value="0.75">0.75×</option><option value="1">1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label>
+        <div class="row message-row" data-message-row hidden>
+          <img class="logo" src="${logoUrl}" alt=""><span class="spinner" data-spinner aria-hidden="true">◌</span><span class="message" data-player-status></span><button class="retry" data-action="retry-generation" hidden>Retry</button><button class="cancel" data-action="cancel-generation" hidden>Cancel</button><button class="close" data-close aria-label="Close player">×</button>
         </div>
-        <div class="row progress-row" data-progress-row hidden><input class="progress" type="range" min="0" max="0" value="0" step="0.1" aria-label="Current part playback position"><span class="time" data-time></span><span class="part" data-part hidden></span></div>
+        <div class="row progress-row" data-progress-row hidden><span class="time" data-elapsed></span><input class="progress" type="range" min="0" max="0" value="0" step="0.1" aria-label="Audio progress"><span class="time remaining" data-remaining></span></div>
+        <div class="loading-track" data-loading role="progressbar" aria-label="Preparing audio" hidden><div class="loading-segment"></div></div>
+        <div class="error-track" data-error-bar hidden></div><div class="secondary" data-secondary hidden>Loading next part…</div>
         <span class="live" aria-live="polite" aria-atomic="true" data-live></span>
       </div>`;
     shadow.addEventListener("click", onPlayerClick);
@@ -403,9 +406,20 @@
       return;
     }
     if (event.target.closest?.("[data-close]")) {
-      state.hiddenRequestId = state.playerState?.playback?.requestId || null;
+      state.hiddenRequestId = state.playerState?.playback?.requestId ||
+        state.playerState?.generation?.requestId || null;
+      state.hiddenGenerationRequestId = state.playerState?.generation?.requestId || null;
       state.playerHost?.remove();
       state.playerHost = null;
+      return;
+    }
+    const seek = Number(event.target.closest?.("[data-seek]")?.dataset.seek);
+    if (Number.isFinite(seek)) {
+      const playback = state.playerState?.playback || {};
+      const targetTime = globalThis.__mochiAudioInPagePlayerState.seekTarget(
+        playback.currentTime, playback.duration, seek,
+      );
+      send({ type: "PLAYBACK_SEEK", payload: { deltaSeconds: targetTime - (playback.currentTime || 0) } }).catch(() => {});
       return;
     }
     const command = event.target.closest?.("[data-command]")?.dataset.command;
@@ -427,6 +441,7 @@
     if (!view.visible || (!shared?.session?.ownsPlayback && !standaloneStatus)) {
       state.playerHost?.remove();
       state.playerHost = null;
+      state.announcedPlayerStatus = null;
       state.activeRequestId = null;
       state.activePassageElement = null;
       if (!generationBlocked) setPassageState("idle");
@@ -434,35 +449,41 @@
     }
     if (state.hiddenRequestId && state.hiddenRequestId === playback.requestId) return;
     if (state.hiddenRequestId !== playback.requestId) state.hiddenRequestId = null;
+    if (state.hiddenGenerationRequestId &&
+        state.hiddenGenerationRequestId === shared?.generation?.requestId) return;
+    if (state.hiddenGenerationRequestId !== shared?.generation?.requestId) {
+      state.hiddenGenerationRequestId = null;
+    }
     const shadow = createPlayer().shadowRoot;
     const player = shadow.querySelector(".player");
     player.dataset.mode = view.mode;
     player.setAttribute("aria-busy", String(view.mode === "generating"));
+    shadow.querySelector("[data-message-row]").hidden = view.showPlayback;
+    shadow.querySelector("[data-playback-row]").hidden = !view.showPlayback;
     shadow.querySelector("[data-player-status]").textContent = view.statusText;
-    shadow.querySelector("[data-live]").textContent = `${view.statusText}.`;
-    shadow.querySelector("[data-spinner]").hidden = !view.showSpinner;
+    if (state.announcedPlayerStatus !== view.statusText) {
+      shadow.querySelector("[data-live]").textContent = `${view.statusText}.`;
+      state.announcedPlayerStatus = view.statusText;
+    }
+    shadow.querySelector("[data-spinner]").style.visibility = view.showSpinner ? "visible" : "hidden";
     shadow.querySelector('[data-action="retry-generation"]').hidden = !view.showRetry;
     shadow.querySelector('[data-action="cancel-generation"]').hidden = !view.showCancel;
-    shadow.querySelector("[data-controls]").hidden = !view.showTransport;
     const primary = shadow.querySelector("[data-primary]");
     primary.dataset.command = view.primary.command;
     primary.setAttribute("aria-label", view.primary.label);
-    primary.firstChild.textContent = `${view.primary.icon} `;
-    primary.querySelector("span").textContent = view.primary.text;
-    const previous = shadow.querySelector("[data-previous]");
-    const next = shadow.querySelector("[data-next]");
-    previous.hidden = next.hidden = !view.showParts;
-    previous.disabled = view.previousDisabled;
-    next.disabled = view.nextDisabled;
-    shadow.querySelector("[data-speed]").hidden = !view.showSpeed;
+    primary.querySelector('[aria-hidden="true"]').textContent = view.primary.icon;
+    primary.querySelector(".primary-label").textContent = view.primary.text;
+    shadow.querySelector('[data-seek="-5"]').disabled = view.rewindDisabled;
+    shadow.querySelector('[data-seek="5"]').disabled = view.forwardDisabled;
     const progress = shadow.querySelector("input");
     progress.max = String(view.duration);
     progress.value = String(view.currentTime);
     shadow.querySelector("[data-progress-row]").hidden = !view.showProgress;
-    shadow.querySelector("[data-time]").textContent = view.timingLabel || "";
-    const part = shadow.querySelector("[data-part]");
-    part.hidden = !view.partLabel;
-    part.textContent = view.partLabel || "";
+    shadow.querySelector("[data-elapsed]").textContent = view.elapsedLabel;
+    shadow.querySelector("[data-remaining]").textContent = view.remainingLabel || "";
+    shadow.querySelector("[data-loading]").hidden = !view.showIndeterminate;
+    shadow.querySelector("[data-error-bar]").hidden = !view.showErrorBar;
+    shadow.querySelector("[data-secondary]").hidden = !view.showSecondaryLoading;
     shadow.querySelector("select").value = String(playback.playbackRate || 1);
   }
 
@@ -552,6 +573,7 @@
     state.overlay?.remove();
     state.overlay = state.passageButton = state.pageButton = state.playerHost = null;
     state.region = state.regionId = state.playerState = state.activeRequestId = state.activePassageElement = null;
+    state.hiddenRequestId = state.hiddenGenerationRequestId = state.announcedPlayerStatus = null;
     if (notify) send({ type: TYPES.statusChanged, payload: { enabled: false, pageUrl: location.href } }).catch(() => {});
   }
 

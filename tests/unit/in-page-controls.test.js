@@ -147,43 +147,44 @@ test("player maps generating state without technical playback clutter", () => {
   assert.equal(loading.mode, "generating");
   assert.equal(loading.statusText, "Preparing audio…");
   assert.equal(loading.showCancel, true);
-  assert.equal(loading.showTransport, false);
+  assert.equal(loading.showPlayback, false);
   assert.equal(loading.showProgress, false);
-  assert.equal(loading.timingLabel, null);
+  assert.equal(loading.showIndeterminate, true);
+  assert.equal(loading.remainingLabel, null);
 });
 
-test("player maps playing and paused states to one stateful primary action", () => {
+test("player maps elapsed and remaining time without exposing total duration", () => {
   const playing = player.map({
-    playback: { status: "playing", currentTime: 65.8, duration: 120 },
+    playback: { status: "playing", currentTime: 61, duration: 240 },
     queue: { currentIndex: 0, entries: [{}] },
   });
+  assert.equal(playing.elapsedLabel, "1:01");
+  assert.equal(playing.remainingSeconds, 179);
+  assert.equal(playing.remainingLabel, "-2:59");
+  assert.equal(playing.showPlayback, true);
   assert.equal(playing.primary.label, "Pause audio");
   assert.equal(playing.primary.command, "PLAYBACK_PAUSE");
-  assert.equal(playing.showParts, false);
-  assert.equal(playing.showSpeed, true);
 
   const paused = player.map({
     playback: { status: "paused", currentTime: 4, duration: 0 },
-    queue: { currentIndex: 1, entries: [{}, {}, {}] },
+    queue: { currentIndex: 0, entries: [{}] },
   });
   assert.equal(paused.primary.label, "Resume audio");
   assert.equal(paused.primary.command, "PLAYBACK_RESUME");
-  assert.equal(paused.showParts, true);
-  assert.equal(paused.previousDisabled, false);
-  assert.equal(paused.nextDisabled, false);
   assert.equal(paused.determinate, false);
-  assert.equal(paused.durationLabel, null);
-  assert.equal(paused.partLabel, "Part 2 of 3");
+  assert.equal(paused.remainingLabel, null);
 });
 
-test("player maps finished, failed, and timing states with user-facing labels", () => {
+test("player clamps time, formats completion, and maps compact terminal states", () => {
   const finished = player.map({
     playback: { status: "ended", currentTime: 120, duration: 120 },
     queue: { currentIndex: 0, entries: [{}] },
   });
   assert.equal(finished.statusText, "Playback finished");
   assert.equal(finished.primary.label, "Replay audio");
-  assert.equal(finished.timingLabel, "2:00 / 2:00");
+  assert.equal(finished.elapsedLabel, "2:00");
+  assert.equal(finished.remainingLabel, "-0:00");
+  assert.equal(finished.forwardDisabled, true);
 
   const failed = player.map({
     generation: { status: "failed", ownsGeneration: true },
@@ -192,7 +193,7 @@ test("player maps finished, failed, and timing states with user-facing labels", 
   assert.equal(failed.statusText, "Could not prepare audio");
   assert.equal(failed.showCancel, false);
   assert.equal(failed.showRetry, true);
-  assert.equal(failed.showSpeed, false);
+  assert.equal(failed.showErrorBar, true);
 
   const buffering = player.map({
     generation: { status: "buffering", ownsGeneration: true, cancellable: true },
@@ -201,6 +202,14 @@ test("player maps finished, failed, and timing states with user-facing labels", 
   });
   assert.equal(buffering.mode, "buffering");
   assert.equal(buffering.statusText, "Loading next part…");
-  assert.equal(buffering.showTransport, true);
+  assert.equal(buffering.showPlayback, true);
   assert.equal(buffering.showCancel, true);
+  assert.equal(buffering.showSecondaryLoading, true);
+});
+
+test("five-second seek targets clamp exactly to audio bounds", () => {
+  assert.equal(player.seekTarget(10, 30, -5), 5);
+  assert.equal(player.seekTarget(10, 30, 5), 15);
+  assert.equal(player.seekTarget(2, 30, -5), 0);
+  assert.equal(player.seekTarget(28, 30, 5), 30);
 });
